@@ -7,9 +7,16 @@ const menuScreen = document.getElementById('menu-screen');
 const gameScreen = document.getElementById('game-screen');
 const overlay = document.getElementById('overlay');
 
+const hubScreen = document.getElementById('hub-screen');
+const btnHubPlay = document.getElementById('btn-hub-play');
+const btnHubUpgrades = document.getElementById('btn-hub-upgrades');
+const btnHubLb = document.getElementById('btn-hub-lb');
+const hubWaveText = document.getElementById('hub-wave-text');
+const hubMoney = document.getElementById('hub-money');
+const btnBackHub = document.getElementById('btn-back-hub');
+
 const menuMoneyEl = document.getElementById('menu-money');
 const menuWaveEl = document.getElementById('menu-wave-text');
-const btnPlay = document.getElementById('btn-play');
 
 const hudMoney = document.getElementById('hud-money');
 const hudProgress = document.getElementById('hud-progress');
@@ -24,12 +31,58 @@ const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume');
 const btnQuit = document.getElementById('btn-quit');
 
+const btnPrestige = document.getElementById('btn-prestige');
+const idlePopup = document.getElementById('idle-popup');
+const idleAmount = document.getElementById('idle-amount');
+const btnCollectIdle = document.getElementById('btn-collect-idle');
+
 // Game State
 let gameState = 'LOGIN'; // LOGIN, MENU, PLAYING, END
 let isPaused = false;
 let currentUser = null;
 let wave = 1;
 let money = 0;
+let prestigeLevel = 0;
+
+// Audio Engine
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(type) {
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    if (type === 'shoot') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    } else if (type === 'hit') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    } else if (type === 'buy') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+    } else if (type === 'nuke') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 1.0);
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
+        osc.start(); osc.stop(audioCtx.currentTime + 1.0);
+    }
+}
 
 let waveProgress = 0;
 let waveQuota = 10;
@@ -42,7 +95,8 @@ const upg = {
     income: { btn: document.getElementById('btn-income'), costEl: document.getElementById('cost-income'), lvlEl: document.getElementById('lvl-income'), lvl: 1, baseCost: 25, costMult: 1.7, val: 1 },
     multishot: { btn: document.getElementById('btn-multishot'), costEl: document.getElementById('cost-multishot'), lvlEl: document.getElementById('lvl-multishot'), lvl: 1, baseCost: 250, costMult: 4.5, val: 1 },
     spawn: { btn: document.getElementById('btn-spawn'), costEl: document.getElementById('cost-spawn'), lvlEl: document.getElementById('lvl-spawn'), lvl: 1, baseCost: 50, costMult: 1.8, val: 1 },
-    pierce: { btn: document.getElementById('btn-pierce'), costEl: document.getElementById('cost-pierce'), lvlEl: document.getElementById('lvl-pierce'), lvl: 1, baseCost: 2500000, costMult: 10, val: 0 }
+    pierce: { btn: document.getElementById('btn-pierce'), costEl: document.getElementById('cost-pierce'), lvlEl: document.getElementById('lvl-pierce'), lvl: 1, baseCost: 2500000, costMult: 10, val: 0 },
+    homing: { btn: document.getElementById('btn-homing'), costEl: document.getElementById('cost-homing'), lvlEl: document.getElementById('lvl-homing'), lvl: 0, baseCost: 5000000, costMult: 8, val: 0 }
 };
 
 function formatNumber(num) {
@@ -58,14 +112,16 @@ function getCost(key) {
 
 function updateMenuUI() {
     menuMoneyEl.innerText = '$' + formatNumber(money);
+    hubMoney.innerText = '$' + formatNumber(money);
+    
     if (wave % 10 === 0) {
-        menuWaveEl.innerText = 'BOSS WAVE ' + wave;
-        menuWaveEl.style.color = '#ff0000';
+        hubWaveText.innerText = 'BOSS WAVE ' + wave;
+        hubWaveText.style.color = '#ff0000';
     } else {
-        menuWaveEl.innerText = 'WAVE ' + wave;
-        menuWaveEl.style.color = '#fff';
+        hubWaveText.innerText = 'WAVE ' + wave;
+        hubWaveText.style.color = '#fff';
     }
-    btnPlay.innerText = 'START WAVE ' + wave;
+    btnHubPlay.innerText = '▶ PLAY WAVE ' + wave;
     
     for (let key in upg) {
         let cost = getCost(key);
@@ -77,6 +133,13 @@ function updateMenuUI() {
         } else {
             upg[key].btn.classList.add('disabled');
         }
+    }
+    
+    if (wave >= 100) {
+        btnPrestige.classList.remove('hidden');
+        btnPrestige.innerText = `⭐ PRESTIGE (WAVE 100) -> LEVEL ${prestigeLevel + 1}`;
+    } else {
+        btnPrestige.classList.add('hidden');
     }
 }
 
@@ -92,7 +155,9 @@ function buyUpgrade(key) {
         if (key === 'multishot') upg.multishot.val += 1;
         if (key === 'spawn') upg.spawn.val += 1;
         if (key === 'pierce') upg.pierce.val += 1;
+        if (key === 'homing') upg.homing.val += 1;
         
+        playSound('buy');
         updateMenuUI();
     }
 }
@@ -132,7 +197,6 @@ let isBossWave = false;
 function startWave() {
     gameState = 'PLAYING';
     isPaused = false;
-    waveProgress = 0;
     
     isBossWave = (wave % 10 === 0);
     waveQuota = isBossWave ? 1 : (30 + wave * 15);
@@ -146,6 +210,7 @@ function startWave() {
     activeBuffs = { frenzy: 0, doubleMoney: 0, spread: 0 };
     
     menuScreen.classList.add('hidden');
+    hubScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
     overlay.classList.add('hidden');
     
@@ -154,7 +219,7 @@ function startWave() {
     playerX = canvas.width / 2;
     playerY = canvas.height - 100;
     
-    hudProgress.innerText = `0 / ${waveQuota}`;
+    hudProgress.innerText = `${waveProgress} / ${waveQuota}`;
     updateLivesHUD();
     hudMoney.innerText = '$' + formatNumber(money);
     
@@ -246,8 +311,22 @@ function update(dt, time) {
     // Move bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
-        b.y -= 14 * (dt / 16);
-        if (b.y < -50) bullets.splice(i, 1);
+        
+        if (b.isHoming && targets.length > 0) {
+            let target = targets[0];
+            let minDist = Infinity;
+            for(let t of targets) {
+                let dist = Math.hypot(t.x - b.x, t.y - b.y);
+                if (dist < minDist) { minDist = dist; target = t; }
+            }
+            let angle = Math.atan2(target.y + target.size/2 - b.y, target.x + target.size/2 - b.x);
+            b.x += Math.cos(angle) * 8 * (dt / 16);
+            b.y += Math.sin(angle) * 8 * (dt / 16);
+        } else {
+            b.y -= 14 * (dt / 16);
+        }
+        
+        if (b.y < -50 || b.x < -50 || b.x > canvas.width + 50 || b.y > canvas.height + 50) bullets.splice(i, 1);
     }
     
     // Move targets
@@ -265,6 +344,10 @@ function update(dt, time) {
             }
         } else {
             t.y += 2 * (dt / 16); // Fall speed
+            if (t.zigZag) {
+                t.x = t.baseX + Math.sin(time / 500 + t.timeOffset) * 100;
+                t.x = Math.max(0, Math.min(canvas.width - t.size, t.x));
+            }
         }
         
         // Target hits player physically
@@ -310,14 +393,15 @@ function update(dt, time) {
                 if (b.hitTargets.includes(t)) continue;
                 b.hitTargets.push(t);
                 
-                t.hp -= upg.damage.val;
+                t.hp -= upg.damage.val * (1 + prestigeLevel);
                 
+                playSound('hit');
                 createParticles(b.x, b.y, '#00f3ff', 2);
                 
                 if (t.hp <= 0) {
                     let multiplier = (activeBuffs.doubleMoney > 0) ? 2 : 1;
                     let bossBonus = t.isBoss ? 5 : 1;
-                    let earned = Math.floor(t.maxHp * upg.income.val * multiplier * bossBonus);
+                    let earned = Math.floor(t.maxHp * upg.income.val * multiplier * bossBonus * (1 + prestigeLevel));
                     money += earned;
                     hudMoney.innerText = '$' + formatNumber(money);
                     
@@ -372,16 +456,18 @@ function endWave(victory) {
         overlayTitle.style.color = '#00ff7a';
         overlayDesc.innerText = `You destroyed ${waveQuota} targets!`;
         
-        let waveBonus = Math.floor(100 * wave * upg.income.val);
+        let waveBonus = Math.floor(100 * wave * upg.income.val * (1 + prestigeLevel));
         money += waveBonus;
         overlayReward.innerText = 'Bonus: +$' + formatNumber(waveBonus);
         
         wave++;
+        waveProgress = 0;
     } else {
         overlayTitle.innerText = 'WAVE FAILED';
         overlayTitle.style.color = '#ff007a';
         overlayDesc.innerText = 'A target hit you or the ground.';
         overlayReward.innerText = 'Progress: ' + waveProgress + ' / ' + waveQuota;
+        waveProgress = 0;
     }
 }
 
@@ -401,10 +487,25 @@ function shoot() {
             x: startX + (i * spread) - 4,
             y: playerY - 30,
             width: 8,
-            height: 25
+            height: 25,
+            isHoming: false
         });
     }
+    
+    if (upg.homing.val > 0) {
+        for(let i = 0; i < upg.homing.val; i++) {
+            bullets.push({
+                x: playerX,
+                y: playerY - 30,
+                width: 12,
+                height: 12,
+                isHoming: true
+            });
+        }
+    }
+    
     gunRecoil = 15;
+    playSound('shoot');
 }
 
 function spawnPowerup() {
@@ -426,6 +527,7 @@ function spawnPowerup() {
 
 function activatePowerup(type) {
     if (type === 'nuke') {
+        playSound('nuke');
         let earnedTotal = 0;
         let multiplier = (activeBuffs.doubleMoney > 0) ? 2 : 1;
         for (let i = targets.length - 1; i >= 0; i--) {
@@ -434,14 +536,14 @@ function activatePowerup(type) {
                 t.hp -= Math.floor(t.maxHp * 0.2); // 20% damage to boss
                 createParticles(t.x + t.size/2, t.y + t.size/2, '#ff0000', 30);
                 if (t.hp <= 0) {
-                    earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier * 5);
+                    earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier * 5 * (1 + prestigeLevel));
                     waveProgress++;
                     targets.splice(i, 1);
                 } else {
                     t.flash = 0.5;
                 }
             } else {
-                earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier);
+                earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier * (1 + prestigeLevel));
                 createParticles(t.x + t.size/2, t.y + t.size/2, t.color, 10);
                 waveProgress++;
                 targets.splice(i, 1);
@@ -495,7 +597,9 @@ function spawnTarget() {
     targets.push({
         x: x, y: y, size: size,
         hp: hp, maxHp: hp,
-        color: color, flash: 0
+        color: color, flash: 0,
+        baseX: x, timeOffset: Math.random() * 100,
+        zigZag: Math.random() < 0.3 // 30% chance to zig-zag
     });
 }
 
@@ -547,6 +651,13 @@ function draw() {
     ctx.shadowBlur = 15;
     ctx.shadowColor = '#00f3ff';
     for (let b of bullets) {
+        if (b.isHoming) {
+            ctx.fillStyle = '#ffd700';
+            ctx.shadowColor = '#ffd700';
+        } else {
+            ctx.fillStyle = '#00f3ff';
+            ctx.shadowColor = '#00f3ff';
+        }
         ctx.fillRect(b.x, b.y, b.width, b.height);
     }
     ctx.shadowBlur = 0;
@@ -640,11 +751,22 @@ canvas.addEventListener('mousemove', (e) => {
 });
 window.addEventListener('mouseup', () => { isDragging = false; });
 
-// Buttons
-btnPlay.addEventListener('click', startWave);
+// Hub Navigation
+btnHubPlay.addEventListener('click', startWave);
+btnHubUpgrades.addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    menuScreen.classList.remove('hidden');
+});
+btnBackHub.addEventListener('click', () => {
+    menuScreen.classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+    updateMenuUI();
+});
+
 btnContinue.addEventListener('click', () => {
     gameScreen.classList.add('hidden');
-    menuScreen.classList.remove('hidden');
+    hubScreen.classList.remove('hidden');
+    gameState = 'HUB';
     updateMenuUI();
 });
 
@@ -665,8 +787,30 @@ btnQuit.addEventListener('click', () => {
     isPaused = false;
     pauseMenu.classList.add('hidden');
     gameScreen.classList.add('hidden');
-    menuScreen.classList.remove('hidden');
-    gameState = 'MENU';
+    hubScreen.classList.remove('hidden');
+    gameState = 'HUB';
+    updateMenuUI();
+});
+
+btnPrestige.addEventListener('click', () => {
+    if (wave >= 100) {
+        if (confirm("Are you sure? This resets your wave, money, and upgrades, but gives a permanent multiplier!")) {
+            prestigeLevel++;
+            wave = 1;
+            waveProgress = 0;
+            money = 0;
+            for (let key in upg) {
+                upg[key].lvl = key === 'homing' ? 0 : 1;
+                upg[key].val = key === 'firerate' ? 800 : (key === 'pierce' || key === 'homing' ? 0 : 1);
+            }
+            saveGame();
+            updateMenuUI();
+        }
+    }
+});
+
+btnCollectIdle.addEventListener('click', () => {
+    idlePopup.classList.add('hidden');
     updateMenuUI();
 });
 
@@ -676,13 +820,17 @@ function saveGame() {
     let saveObj = {
         money: money,
         wave: wave,
+        waveProgress: waveProgress,
+        prestige: prestigeLevel,
+        lastSaveTime: Date.now(),
         upgrades: {
             damage: { lvl: upg.damage.lvl, val: upg.damage.val },
             firerate: { lvl: upg.firerate.lvl, val: upg.firerate.val },
             income: { lvl: upg.income.lvl, val: upg.income.val },
             multishot: { lvl: upg.multishot.lvl, val: upg.multishot.val },
             spawn: { lvl: upg.spawn.lvl, val: upg.spawn.val },
-            pierce: { lvl: upg.pierce.lvl, val: upg.pierce.val }
+            pierce: { lvl: upg.pierce.lvl, val: upg.pierce.val },
+            homing: { lvl: upg.homing.lvl, val: upg.homing.val }
         }
     };
     localStorage.setItem('neonGunTycoonSave_' + currentUser, JSON.stringify(saveObj));
@@ -703,6 +851,21 @@ function loadGame() {
             let saveObj = JSON.parse(savedStr);
             if (typeof saveObj.money === 'number') money = saveObj.money;
             if (typeof saveObj.wave === 'number') wave = saveObj.wave;
+            if (typeof saveObj.waveProgress === 'number') waveProgress = saveObj.waveProgress;
+            if (typeof saveObj.prestige === 'number') prestigeLevel = saveObj.prestige;
+            
+            // Offline Earnings Calculation
+            if (saveObj.lastSaveTime) {
+                let secondsOffline = Math.floor((Date.now() - saveObj.lastSaveTime) / 1000);
+                if (secondsOffline > 86400) secondsOffline = 86400; // max 24 hours
+                if (secondsOffline > 60) {
+                    let idleRate = wave * upg.income.val * 2 * (1 + prestigeLevel);
+                    let earned = secondsOffline * idleRate;
+                    money += earned;
+                    idleAmount.innerText = '+$' + formatNumber(earned);
+                    idlePopup.classList.remove('hidden');
+                }
+            }
             
             if (saveObj.upgrades) {
                 for (let key in upg) {
@@ -723,13 +886,25 @@ setInterval(saveGame, 2000);
 
 // Passive menu update
 setInterval(() => {
-    if (gameState === 'MENU') updateMenuUI();
+    if (gameState === 'HUB' || gameState === 'MENU') updateMenuUI();
 }, 1000);
 
 // UI Logic for Login and Leaderboard
 let lastUser = localStorage.getItem('neonLastUser');
 if (lastUser) {
     document.getElementById('username').value = lastUser;
+    
+    // Auto-login
+    let accs = JSON.parse(localStorage.getItem('neonAccounts') || '{}');
+    if (accs[lastUser]) {
+        currentUser = lastUser;
+        loadGame();
+        
+        loginScreen.classList.add('hidden');
+        hubScreen.classList.remove('hidden');
+        gameState = 'HUB';
+        updateMenuUI();
+    }
 }
 
 document.getElementById('btn-login').addEventListener('click', () => {
@@ -759,13 +934,13 @@ document.getElementById('btn-login').addEventListener('click', () => {
     loadGame(); 
     
     loginScreen.classList.add('hidden');
-    menuScreen.classList.remove('hidden');
-    gameState = 'MENU';
+    hubScreen.classList.remove('hidden');
+    gameState = 'HUB';
     updateMenuUI();
 });
 
-document.getElementById('btn-lb').addEventListener('click', async () => {
-    menuScreen.classList.add('hidden');
+btnHubLb.addEventListener('click', async () => {
+    hubScreen.classList.add('hidden');
     lbScreen.classList.remove('hidden');
     
     let lbList = document.getElementById('lb-list');
@@ -807,5 +982,5 @@ document.getElementById('btn-lb').addEventListener('click', async () => {
 
 document.getElementById('btn-close-lb').addEventListener('click', () => {
     lbScreen.classList.add('hidden');
-    menuScreen.classList.remove('hidden');
+    hubScreen.classList.remove('hidden');
 });

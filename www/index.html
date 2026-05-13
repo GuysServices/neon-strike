@@ -34,10 +34,23 @@
             </div>
         </div>
         
-        <!-- MAIN MENU SCREEN -->
+        <!-- HUB SCREEN (MAIN MENU) -->
+        <div id="hub-screen" class="screen hidden" style="background: #0f0f16; justify-content: center; align-items: center; z-index: 20;">
+            <div style="text-align: center; width: 90%; max-width: 400px;">
+                <h1 style="color: #00f3ff; font-weight: 900; font-size: 40px; margin-bottom: 30px;">NEON GUN TYCOON</h1>
+                <div id="hub-wave-text" style="color: #fff; font-size: 24px; font-weight: 700; margin-bottom: 5px;">WAVE 1</div>
+                <div id="hub-money" style="color: #00f3ff; font-size: 32px; font-weight: 900; margin-bottom: 40px; text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);">$0</div>
+                
+                <button id="btn-hub-play" style="margin-bottom: 20px; font-size: 28px; padding: 25px;">▶ PLAY WAVE 1</button>
+                <button id="btn-hub-upgrades" style="margin-bottom: 20px; background: #2a2a45; box-shadow: none;">🛠️ UPGRADES</button>
+                <button id="btn-hub-lb" style="background: #2a2a45; box-shadow: none;">🏆 LEADERBOARD</button>
+            </div>
+        </div>
+        
+        <!-- UPGRADES SCREEN -->
         <div id="menu-screen" class="screen hidden">
             <div class="menu-header">
-                <div><span id="menu-wave-text">WAVE 1</span></div>
+                <div><span id="menu-wave-text" style="color: #fff;">UPGRADES</span></div>
                 <div id="menu-money">$0</div>
             </div>
             
@@ -89,11 +102,19 @@
                     </div>
                     <div class="upg-cost" id="cost-pierce" style="background: #ff007a; color: white; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">$2.5M</div>
                 </div>
+                
+                <div class="upgrade-btn" id="btn-homing">
+                    <div class="upg-info">
+                        <span class="upg-name" style="color: #ffd700;">HOMING MISSILES</span>
+                        <span class="upg-level" id="lvl-homing">Lv 0</span>
+                    </div>
+                    <div class="upg-cost" id="cost-homing" style="background: #ffd700; color: #000; box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);">$5M</div>
+                </div>
             </div>
             
-            <div class="menu-footer" style="display: flex; gap: 10px;">
-                <button id="btn-lb" style="flex: 1; font-size: 16px; padding: 15px; background: #2a2a45; box-shadow: none;">🏆 TOP 100</button>
-                <button id="btn-play" style="flex: 2; padding: 15px;">START WAVE 1</button>
+            <div class="menu-footer" style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="btn-prestige" class="hidden" style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 10px 30px rgba(255, 215, 0, 0.4); font-size: 20px; padding: 15px;">⭐ PRESTIGE (REQ: WAVE 100)</button>
+                <button id="btn-back-hub" style="padding: 15px; background: #ff007a; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">BACK TO MENU</button>
             </div>
         </div>
 
@@ -104,7 +125,7 @@
             <div class="hud" id="hud-money">$0</div>
             <div class="hud" id="hud-progress">0 / 10</div>
             <div class="hud" id="hud-lives">❤️❤️❤️</div>
-            <div id="btn-pause" class="hud" style="top: calc(env(safe-area-inset-top, 20px) + 20px); left: 50%; transform: translateX(-50%); cursor: pointer; border: 1px solid rgba(255,255,255,0.3); padding: 5px 15px; background: rgba(0,0,0,0.5); z-index: 10;">⏸️ PAUSE</div>
+            <div id="btn-pause" class="hud" style="top: calc(env(safe-area-inset-top, 20px) + 20px); left: 50%; transform: translateX(-50%); cursor: pointer; border: 1px solid rgba(255,255,255,0.3); padding: 5px 15px; background: rgba(0,0,0,0.5); z-index: 10; pointer-events: auto;">⏸️ PAUSE</div>
             <div id="tap-hint">Drag to move & shoot!</div>
             
             <div id="overlay" class="hidden panel">
@@ -118,6 +139,16 @@
                 <h1 style="font-size: 36px; margin-bottom: 20px; color: #fff;">PAUSED</h1>
                 <button id="btn-resume">RESUME</button>
                 <button id="btn-quit" style="background: #ff007a; margin-top: 15px; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">QUIT TO MENU</button>
+            </div>
+        </div>
+
+        <!-- IDLE EARNINGS POPUP -->
+        <div id="idle-popup" class="hidden screen" style="z-index: 200; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; pointer-events: auto;">
+            <div style="width: 90%; max-width: 400px; background: rgba(20,20,30,0.95); padding: 40px; border-radius: 30px; text-align: center; border: 2px solid #ffaa00; box-shadow: 0 0 50px rgba(255,170,0,0.4);">
+                <h1 style="color: #ffaa00; margin-bottom: 10px;">WELCOME BACK!</h1>
+                <p style="color: #a0a0b0; font-size: 18px;">Your base mined money while you were offline:</p>
+                <div id="idle-amount" style="font-size: 36px; color: #00f3ff; font-weight: 900; margin: 25px 0;">+$0</div>
+                <button id="btn-collect-idle" style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 10px 30px rgba(255, 215, 0, 0.4);">COLLECT</button>
             </div>
         </div>
 
