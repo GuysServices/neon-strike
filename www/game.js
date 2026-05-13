@@ -653,9 +653,9 @@ function saveGame() {
     localStorage.setItem('neonGunTycoonSave_' + currentUser, JSON.stringify(saveObj));
     
     // Ping real-time server
-    fetch('/api/update_score', {
+    fetch('https://neon-server-crhx.onrender.com/api/update_score', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ user: currentUser, wave: wave, money: money })
     }).catch(e => console.log("Backend not connected"));
 }
@@ -737,7 +737,7 @@ document.getElementById('btn-lb').addEventListener('click', async () => {
     lbList.innerHTML = '<div style="text-align:center; padding: 20px;">Loading real-time data...</div>';
     
     try {
-        let res = await fetch('/api/leaderboard');
+        let res = await fetch('https://neon-server-crhx.onrender.com/api/leaderboard');
         let lb = await res.json();
         
         lbList.innerHTML = '';
