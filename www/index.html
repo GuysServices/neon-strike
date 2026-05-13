@@ -104,6 +104,7 @@
             <div class="hud" id="hud-money">$0</div>
             <div class="hud" id="hud-progress">0 / 10</div>
             <div class="hud" id="hud-lives">❤️❤️❤️</div>
+            <div id="btn-pause" class="hud" style="top: calc(env(safe-area-inset-top, 20px) + 20px); left: 50%; transform: translateX(-50%); cursor: pointer; border: 1px solid rgba(255,255,255,0.3); padding: 5px 15px; background: rgba(0,0,0,0.5); z-index: 10;">⏸️ PAUSE</div>
             <div id="tap-hint">Drag to move & shoot!</div>
             
             <div id="overlay" class="hidden panel">
@@ -111,6 +112,12 @@
                 <p id="overlay-desc">Returning to base...</p>
                 <div class="final-score" id="overlay-reward">Reward: $0</div>
                 <button id="btn-continue">CONTINUE</button>
+            </div>
+            
+            <div id="pause-menu" class="hidden panel" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 400px; background: rgba(20,20,30,0.95); padding: 40px; border-radius: 30px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border: 1px solid rgba(0,243,255,0.3); backdrop-filter: blur(10px); z-index: 100; pointer-events: auto;">
+                <h1 style="font-size: 36px; margin-bottom: 20px; color: #fff;">PAUSED</h1>
+                <button id="btn-resume">RESUME</button>
+                <button id="btn-quit" style="background: #ff007a; margin-top: 15px; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">QUIT TO MENU</button>
             </div>
         </div>
 

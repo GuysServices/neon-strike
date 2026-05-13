@@ -19,8 +19,14 @@ const overlayDesc = document.getElementById('overlay-desc');
 const overlayReward = document.getElementById('overlay-reward');
 const btnContinue = document.getElementById('btn-continue');
 
+const btnPause = document.getElementById('btn-pause');
+const pauseMenu = document.getElementById('pause-menu');
+const btnResume = document.getElementById('btn-resume');
+const btnQuit = document.getElementById('btn-quit');
+
 // Game State
 let gameState = 'LOGIN'; // LOGIN, MENU, PLAYING, END
+let isPaused = false;
 let currentUser = null;
 let wave = 1;
 let money = 0;
@@ -125,6 +131,7 @@ let isBossWave = false;
 
 function startWave() {
     gameState = 'PLAYING';
+    isPaused = false;
     waveProgress = 0;
     
     isBossWave = (wave % 10 === 0);
@@ -167,6 +174,12 @@ let lastTime = performance.now();
 
 function gameLoop(currentTime) {
     if (gameState !== 'PLAYING') return;
+    
+    if (isPaused) {
+        lastTime = currentTime;
+        requestAnimationFrame(gameLoop);
+        return;
+    }
     
     const dt = currentTime - lastTime;
     lastTime = currentTime;
@@ -632,6 +645,28 @@ btnPlay.addEventListener('click', startWave);
 btnContinue.addEventListener('click', () => {
     gameScreen.classList.add('hidden');
     menuScreen.classList.remove('hidden');
+    updateMenuUI();
+});
+
+btnPause.addEventListener('click', () => {
+    if (gameState === 'PLAYING' && !isPaused) {
+        isPaused = true;
+        pauseMenu.classList.remove('hidden');
+    }
+});
+
+btnResume.addEventListener('click', () => {
+    isPaused = false;
+    pauseMenu.classList.add('hidden');
+    lastTime = performance.now();
+});
+
+btnQuit.addEventListener('click', () => {
+    isPaused = false;
+    pauseMenu.classList.add('hidden');
+    gameScreen.classList.add('hidden');
+    menuScreen.classList.remove('hidden');
+    gameState = 'MENU';
     updateMenuUI();
 });
 
