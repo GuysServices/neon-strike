@@ -16,6 +16,7 @@ jobs:
         
       - name: Add & Sync iOS
         run: |
+          npm install @capacitor/ios
           npx cap add ios || echo "iOS already added"
           npx cap sync ios
           
