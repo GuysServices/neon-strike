@@ -1,0 +1,10 @@
+{
+  "appId": "com.guyzmodz.neonstrike",
+  "appName": "Neon Strike",
+  "webDir": "www",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false
+    }
+  }
+}

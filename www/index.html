@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Neon Gun Tycoon</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f0f16">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        
+        <!-- LOGIN SCREEN -->
+        <div id="login-screen" class="screen">
+            <div class="login-box">
+                <h1>NEON GUN TYCOON</h1>
+                <input type="text" id="username" placeholder="Username" maxlength="16">
+                <input type="password" id="password" placeholder="Password">
+                <button id="btn-login">LOGIN / PLAY</button>
+                <p id="login-error" style="color: red; margin-top: 10px; display: none;">Invalid credentials</p>
+            </div>
+        </div>
+        
+        <!-- LEADERBOARD SCREEN -->
+        <div id="leaderboard-screen" class="screen hidden">
+            <div class="menu-header">
+                <div><span id="menu-wave-text" style="color:#00f3ff;">TOP 100 PLAYERS</span></div>
+                <button id="btn-close-lb" style="width: auto; padding: 10px 20px; font-size: 16px;">BACK</button>
+            </div>
+            <div class="lb-list" id="lb-list">
+                <!-- Leaderboard items injected here -->
+            </div>
+        </div>
+        
+        <!-- MAIN MENU SCREEN -->
+        <div id="menu-screen" class="screen hidden">
+            <div class="menu-header">
+                <div><span id="menu-wave-text">WAVE 1</span></div>
+                <div id="menu-money">$0</div>
+            </div>
+            
+            <div id="upgrade-panel">
+                <div class="upgrade-btn" id="btn-damage">
+                    <div class="upg-info">
+                        <span class="upg-name">DAMAGE</span>
+                        <span class="upg-level" id="lvl-damage">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-damage">$10</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-firerate">
+                    <div class="upg-info">
+                        <span class="upg-name">FIRE RATE</span>
+                        <span class="upg-level" id="lvl-firerate">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-firerate">$15</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-income">
+                    <div class="upg-info">
+                        <span class="upg-name">INCOME</span>
+                        <span class="upg-level" id="lvl-income">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-income">$25</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-multishot">
+                    <div class="upg-info">
+                        <span class="upg-name">MULTI-SHOT</span>
+                        <span class="upg-level" id="lvl-multishot">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-multishot">$250</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-spawn">
+                    <div class="upg-info">
+                        <span class="upg-name">SPAWN RATE</span>
+                        <span class="upg-level" id="lvl-spawn">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-spawn">$50</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-pierce">
+                    <div class="upg-info">
+                        <span class="upg-name" style="color: #ff007a;">PIERCE (OP)</span>
+                        <span class="upg-level" id="lvl-pierce">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-pierce" style="background: #ff007a; color: white; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">$2.5M</div>
+                </div>
+            </div>
+            
+            <div class="menu-footer" style="display: flex; gap: 10px;">
+                <button id="btn-lb" style="flex: 1; font-size: 16px; padding: 15px; background: #2a2a45; box-shadow: none;">🏆 TOP 100</button>
+                <button id="btn-play" style="flex: 2; padding: 15px;">START WAVE 1</button>
+            </div>
+        </div>
+
+        <!-- GAME SCREEN -->
+        <div id="game-screen" class="screen hidden">
+            <canvas id="gameCanvas"></canvas>
+            
+            <div class="hud" id="hud-money">$0</div>
+            <div class="hud" id="hud-progress">0 / 10</div>
+            <div class="hud" id="hud-lives">❤️❤️❤️</div>
+            <div id="tap-hint">Drag to move & shoot!</div>
+            
+            <div id="overlay" class="hidden panel">
+                <h1 id="overlay-title">WAVE CLEARED</h1>
+                <p id="overlay-desc">Returning to base...</p>
+                <div class="final-score" id="overlay-reward">Reward: $0</div>
+                <button id="btn-continue">CONTINUE</button>
+            </div>
+        </div>
+
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
