@@ -40,7 +40,7 @@ const idleAmount = document.getElementById('idle-amount');
 const btnCollectIdle = document.getElementById('btn-collect-idle');
 
 // Game State
-const OWNER_IDS = ['GWHT00U4', 'U95I7XBL', '5HF0MWUJ'];
+const OWNER_IDS = ['GWHT00U4', 'U95I7XBL', '5HF0MWUJ', 'V20DJ5G5'];
 let gameState = 'LOGIN'; // LOGIN, MENU, PLAYING, END
 let isPaused = false;
 let currentUser = null;
