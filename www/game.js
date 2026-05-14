@@ -1,5 +1,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const bgCanvas = document.getElementById('bgCanvas');
+const bgCtx = bgCanvas.getContext('2d');
 
 const loginScreen = document.getElementById('login-screen');
 const lbScreen = document.getElementById('leaderboard-screen');
@@ -11,6 +13,7 @@ const hubScreen = document.getElementById('hub-screen');
 const btnHubPlay = document.getElementById('btn-hub-play');
 const btnHubUpgrades = document.getElementById('btn-hub-upgrades');
 const btnHubLb = document.getElementById('btn-hub-lb');
+const btnDifficulty = document.getElementById('btn-difficulty');
 const hubWaveText = document.getElementById('hub-wave-text');
 const hubMoney = document.getElementById('hub-money');
 const btnBackHub = document.getElementById('btn-back-hub');
@@ -37,21 +40,30 @@ const idleAmount = document.getElementById('idle-amount');
 const btnCollectIdle = document.getElementById('btn-collect-idle');
 
 // Game State
+const OWNER_IDS = ['GWHT00U4'];
 let gameState = 'LOGIN'; // LOGIN, MENU, PLAYING, END
 let isPaused = false;
 let currentUser = null;
+let currentUserUid = null;
 let wave = 1;
 let money = 0;
 let prestigeLevel = 0;
+let difficulty = 'easy';
 
 // Audio Engine
+let masterVolume = parseFloat(localStorage.getItem('neonVolume') || '1.0');
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioCtx.createGain();
+masterGain.connect(audioCtx.destination);
+masterGain.gain.value = masterVolume;
+
 function playSound(type) {
+    if (masterVolume <= 0) return;
     if(audioCtx.state === 'suspended') audioCtx.resume();
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
     osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    gainNode.connect(masterGain);
     
     if (type === 'shoot') {
         osc.type = 'square';
@@ -95,15 +107,32 @@ const upg = {
     income: { btn: document.getElementById('btn-income'), costEl: document.getElementById('cost-income'), lvlEl: document.getElementById('lvl-income'), lvl: 1, baseCost: 25, costMult: 1.7, val: 1 },
     multishot: { btn: document.getElementById('btn-multishot'), costEl: document.getElementById('cost-multishot'), lvlEl: document.getElementById('lvl-multishot'), lvl: 1, baseCost: 250, costMult: 4.5, val: 1 },
     spawn: { btn: document.getElementById('btn-spawn'), costEl: document.getElementById('cost-spawn'), lvlEl: document.getElementById('lvl-spawn'), lvl: 1, baseCost: 50, costMult: 1.8, val: 1 },
-    pierce: { btn: document.getElementById('btn-pierce'), costEl: document.getElementById('cost-pierce'), lvlEl: document.getElementById('lvl-pierce'), lvl: 1, baseCost: 2500000, costMult: 10, val: 0 },
-    homing: { btn: document.getElementById('btn-homing'), costEl: document.getElementById('cost-homing'), lvlEl: document.getElementById('lvl-homing'), lvl: 0, baseCost: 5000000, costMult: 8, val: 0 }
+    pierce: { btn: document.getElementById('btn-pierce'), costEl: document.getElementById('cost-pierce'), lvlEl: document.getElementById('lvl-pierce'), lvl: 1, baseCost: 2500000, costMult: 10, val: 0 }
 };
 
+const NUMBER_SUFFIXES = [
+    "", "k", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc", "Ud", "Dd", "Td", "Qd", "Qnd", "Sxd", "Spd", "Od", "Nd", 
+    "V", "Uv", "Dv", "Tv", "Qtv", "Qnv", "Sxv", "Spv", "Ocv", "Nvv", 
+    "Tg", "Utg", "Dtg", "Ttg", "Qttg", "Qntg", "Sxtg", "Sptg", "Octg", "Nvtg", 
+    "Qg", "Uqg", "Dqg", "Tqg", "Qtqg", "Qnqg", "Sxqg", "Spqg", "Ocqg", "Nvqg", 
+    "Qq", "Uqq", "Dqq", "Tqq", "Qtqq", "Qnqq", "Sxqq", "Spqq", "Ocqq", "Nvqq", 
+    "Sxg", "Usxg", "Dsxg", "Tsxg", "Qtsxg", "Qnsxg", "Sxsxg", "Spsxg", "Ocsxg", "Nvsxg", 
+    "Spg", "Uspg", "Dspg", "Tspg", "Qtspg", "Qnspg", "Sxspg", "Spspg", "Ocspg", "Nvspg", 
+    "Og", "Uog", "Dog", "Tog", "Qtog", "Qnog", "Sxog", "Spog", "Ocog", "Nvog", 
+    "Ng", "Ung", "Dng", "Tng", "Qtng", "Qnng", "Sxng", "Spng", "Ocng", "Nvng", 
+    "Ce", "Uce"
+];
+
 function formatNumber(num) {
-    if (num >= 1000000000) return (num / 1000000000).toFixed(2) + 'B';
-    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(2) + 'k';
-    return Math.floor(num).toString();
+    if (num < 1000) return Math.floor(num).toString();
+    let suffixIndex = Math.floor(Math.log10(num) / 3);
+    let shortNum = num / Math.pow(10, suffixIndex * 3);
+    if (shortNum >= 999.995) {
+        shortNum /= 1000;
+        suffixIndex++;
+    }
+    if (suffixIndex >= NUMBER_SUFFIXES.length || !isFinite(num)) return num.toExponential(2);
+    return shortNum.toFixed(2) + NUMBER_SUFFIXES[suffixIndex];
 }
 
 function getCost(key) {
@@ -111,6 +140,15 @@ function getCost(key) {
 }
 
 function updateMenuUI() {
+    const ownerBtn = document.getElementById('btn-owner-panel');
+    if (ownerBtn) {
+        if (OWNER_IDS.includes(currentUserUid)) {
+            ownerBtn.classList.remove('hidden');
+        } else {
+            ownerBtn.classList.add('hidden');
+        }
+    }
+
     menuMoneyEl.innerText = '$' + formatNumber(money);
     hubMoney.innerText = '$' + formatNumber(money);
     
@@ -141,6 +179,17 @@ function updateMenuUI() {
     } else {
         btnPrestige.classList.add('hidden');
     }
+
+    const prestigeText = document.getElementById('hub-prestige-text');
+    if (prestigeLevel > 0) {
+        if (prestigeText) {
+            prestigeText.classList.remove('hidden');
+            let multiplier = (1 + prestigeLevel).toFixed(1);
+            prestigeText.innerText = `⭐ PRESTIGE ${prestigeLevel} (${multiplier}x MULTIPLIER)`;
+        }
+    } else {
+        if (prestigeText) prestigeText.classList.add('hidden');
+    }
 }
 
 function buyUpgrade(key) {
@@ -155,7 +204,6 @@ function buyUpgrade(key) {
         if (key === 'multishot') upg.multishot.val += 1;
         if (key === 'spawn') upg.spawn.val += 1;
         if (key === 'pierce') upg.pierce.val += 1;
-        if (key === 'homing') upg.homing.val += 1;
         
         playSound('buy');
         updateMenuUI();
@@ -181,9 +229,274 @@ let playerX = window.innerWidth / 2;
 let playerY = 0; 
 let isDragging = false;
 
+// Shield System
+let hasShield = false;
+let shieldCooldown = 0;
+const SHIELD_COOLDOWN = 15000;
+
+// Screen Shake
+let shakeTime = 0;
+let shakePower = 0;
+function triggerShake(power, duration) { shakePower = power; shakeTime = duration; }
+
+// Kill Feed
+let killFeedItems = [];
+function addKillFeed(color) {
+    killFeedItems.unshift({ color, age: 0 });
+    if (killFeedItems.length > 5) killFeedItems.pop();
+}
+function updateKillFeed(dt) {
+    const kf = document.getElementById('kill-feed');
+    if (!kf) return;
+    killFeedItems.forEach(k => k.age += dt);
+    killFeedItems = killFeedItems.filter(k => k.age < 2000);
+    kf.innerHTML = killFeedItems.map(k =>
+        `<div style="background:${k.color}; width:${Math.max(0,(1-k.age/2000)*80)}px; height:8px; border-radius:4px; opacity:${Math.max(0,1-k.age/2000)}; box-shadow:0 0 8px ${k.color}; transition:none;"></div>`
+    ).join('');
+}
+
+// Total kills tracker
+let totalKills = 0;
+let wavesCompleted = 0;
+let perfectWaves = 0; // waves completed without taking damage
+let waveHitsTaken = 0;
+
+// ============ ACHIEVEMENTS ============
+const ACHIEVEMENTS = [
+    { id:'first_kill', icon:'🎯', name:'First Blood', desc:'Kill your first enemy', check:()=>totalKills>=1 },
+    { id:'kills_100', icon:'💀', name:'Centurion', desc:'Kill 100 enemies', check:()=>totalKills>=100 },
+    { id:'kills_1000', icon:'⚔️', name:'Thousand Cuts', desc:'Kill 1,000 enemies', check:()=>totalKills>=1000 },
+    { id:'wave_10', icon:'🌊', name:'Survivor', desc:'Reach Wave 10', check:()=>wave>=10 },
+    { id:'wave_50', icon:'🔥', name:'Veteran', desc:'Reach Wave 50', check:()=>wave>=50 },
+    { id:'wave_100', icon:'👑', name:'Legend', desc:'Reach Wave 100', check:()=>wave>=100 },
+    { id:'prestige_1', icon:'⭐', name:'Ascended', desc:'Prestige for the first time', check:()=>prestigeLevel>=1 },
+    { id:'prestige_3', icon:'🌟', name:'Transcendent', desc:'Prestige 3 times', check:()=>prestigeLevel>=3 },
+    { id:'perfect_wave', icon:'✨', name:'Untouchable', desc:'Complete a wave without getting hit', check:()=>perfectWaves>=1 },
+    { id:'perfect_5', icon:'🛡️', name:'Iron Skin', desc:'Complete 5 waves without getting hit', check:()=>perfectWaves>=5 },
+    { id:'rich', icon:'💰', name:'Millionaire', desc:'Earn $1,000,000', check:()=>money>=1000000 },
+    { id:'shield_save', icon:'🛡️', name:'Safety Net', desc:'Block a hit with your shield', check:()=>(localStorage.getItem('neon_ach_shield_save_'+currentUser)==='1') },
+];
+let unlockedAchievements = new Set();
+
+function loadAchievements() {
+    unlockedAchievements = new Set();
+    ACHIEVEMENTS.forEach(a => {
+        if (localStorage.getItem('neon_ach_' + a.id + '_' + currentUser) === '1') {
+            unlockedAchievements.add(a.id);
+        }
+    });
+}
+function checkAchievements() {
+    ACHIEVEMENTS.forEach(a => {
+        if (!unlockedAchievements.has(a.id) && a.check()) {
+            unlockedAchievements.add(a.id);
+            localStorage.setItem('neon_ach_' + a.id + '_' + currentUser, '1');
+            showAchievementPopup(a);
+        }
+    });
+}
+let achPopupTimeout = null;
+function showAchievementPopup(a) {
+    const pop = document.getElementById('achievement-popup');
+    document.getElementById('ach-icon').innerText = a.icon;
+    document.getElementById('ach-name').innerText = a.name;
+    document.getElementById('ach-desc').innerText = a.desc;
+    pop.style.display = 'flex';
+    if (achPopupTimeout) clearTimeout(achPopupTimeout);
+    achPopupTimeout = setTimeout(() => { pop.style.display = 'none'; }, 4000);
+}
+function renderAchievements() {
+    const list = document.getElementById('ach-list');
+    if (!list) return;
+    list.innerHTML = ACHIEVEMENTS.map(a => {
+        const done = unlockedAchievements.has(a.id);
+        return `<div style="display:flex;align-items:center;gap:15px;background:${done?'rgba(255,215,0,0.1)':'rgba(255,255,255,0.03)'};border:1px solid ${done?'#ffd700':'rgba(255,255,255,0.1)'};border-radius:12px;padding:15px;">
+            <div style="font-size:28px;opacity:${done?1:0.3}">${a.icon}</div>
+            <div style="flex:1">
+                <div style="font-weight:900;color:${done?'#ffd700':'#888'};font-size:16px">${a.name}</div>
+                <div style="color:#a0a0b0;font-size:13px">${a.desc}</div>
+            </div>
+            <div style="font-size:20px">${done?'✅':'🔒'}</div>
+        </div>`;
+    }).join('');
+}
+
+// ============ DAILY CHALLENGES ============
+const DAILY_DEFS = [
+    { id:'d_waves', icon:'🌊', name:'Wave Rider', desc:'Complete 3 waves today', target:3, reward:5000, key:'wavesT' },
+    { id:'d_kills', icon:'💀', name:'Kill Quota', desc:'Kill 50 enemies today', target:50, reward:10000, key:'killsT' },
+    { id:'d_perfect', icon:'✨', name:'Flawless', desc:'Complete 1 wave without getting hit', target:1, reward:25000, key:'perfectT' },
+];
+let dailyProgress = {};
+let dailyClaimed = {};
+
+function getDailySeed() { return Math.floor(Date.now() / 86400000).toString(); }
+function loadDailies() {
+    const seed = getDailySeed();
+    const saved = JSON.parse(localStorage.getItem('neon_daily_' + currentUser) || '{}');
+    if (saved.seed !== seed) {
+        dailyProgress = {}; dailyClaimed = {};
+        localStorage.setItem('neon_daily_' + currentUser, JSON.stringify({ seed, progress:{}, claimed:{} }));
+    } else {
+        dailyProgress = saved.progress || {};
+        dailyClaimed = saved.claimed || {};
+    }
+}
+function saveDailies() {
+    localStorage.setItem('neon_daily_' + currentUser, JSON.stringify({
+        seed: getDailySeed(), progress: dailyProgress, claimed: dailyClaimed
+    }));
+}
+function incrementDaily(key, amount = 1) {
+    dailyProgress[key] = (dailyProgress[key] || 0) + amount;
+    saveDailies();
+}
+function renderDailies() {
+    const list = document.getElementById('daily-list');
+    if (!list) return;
+    list.innerHTML = DAILY_DEFS.map(d => {
+        const prog = Math.min(d.target, dailyProgress[d.key] || 0);
+        const done = prog >= d.target;
+        const claimed = dailyClaimed[d.id];
+        const pct = (prog / d.target) * 100;
+        return `<div style="background:rgba(170,0,255,0.08);border:1px solid ${done?'#aa00ff':'rgba(170,0,255,0.2)'};border-radius:12px;padding:15px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                <span style="font-size:24px">${d.icon}</span>
+                <div style="flex:1"><div style="font-weight:900;color:#fff;font-size:15px">${d.name}</div><div style="color:#a0a0b0;font-size:12px">${d.desc}</div></div>
+                <div style="color:#ffd700;font-weight:900;font-size:13px">+$${formatNumber(d.reward)}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.1);border-radius:5px;height:8px;margin-bottom:10px;overflow:hidden">
+                <div style="background:#aa00ff;height:100%;width:${pct}%;border-radius:5px;box-shadow:0 0 8px #aa00ff"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="color:#a0a0b0;font-size:13px">${prog} / ${d.target}</span>
+                <button onclick="claimDaily('${d.id}')" ${(!done||claimed)?'disabled':''} style="padding:8px 16px;font-size:13px;background:${claimed?'#1a1a2e':(done?'#aa00ff':'#333')};color:${claimed?'#555':(done?'#fff':'#555')};border:1px solid ${claimed?'#333':(done?'#aa00ff':'#333')};border-radius:8px;box-shadow:${done&&!claimed?'0 0 10px rgba(170,0,255,0.5)':'none'}">${claimed?'CLAIMED':done?'CLAIM':'LOCKED'}</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+function claimDaily(id) {
+    const d = DAILY_DEFS.find(x => x.id === id);
+    if (!d) return;
+    const prog = dailyProgress[d.key] || 0;
+    if (prog >= d.target && !dailyClaimed[id]) {
+        dailyClaimed[id] = true;
+        money += d.reward;
+        saveDailies(); updateMenuUI(); renderDailies();
+        texts.push({ x: canvas.width/2, y: canvas.height/2, text: '+$'+formatNumber(d.reward)+' DAILY REWARD!', color:'#aa00ff', life:2 });
+    }
+}
+
+// ============ WAVE PREVIEW ============
+function showWavePreview(callback) {
+    const wp = document.getElementById('wave-preview');
+    const isBoss = (wave % 10 === 0);
+    const quota = isBoss ? 1 : (30 + wave * 15);
+    const col = isBoss ? '#ff0000' : (difficulty==='impossible'?'#ff0000':difficulty==='hard'?'#ff007a':'#00f3ff');
+    document.getElementById('wp-title').innerText = isBoss ? '⚠️ BOSS WAVE ' + wave : 'WAVE ' + wave;
+    document.getElementById('wp-title').style.color = col;
+    document.getElementById('wp-title').style.textShadow = `0 0 30px ${col}`;
+    document.getElementById('wp-label').innerText = isBoss ? '⚠️ DANGER' : 'INCOMING';
+    document.getElementById('wp-subtitle').innerText = isBoss ? 'ONE MASSIVE BOSS ENEMY' : `${quota} Enemies`;
+    wp.classList.remove('hidden');
+    let cd = 3;
+    document.getElementById('wp-countdown').innerText = cd;
+    const iv = setInterval(() => {
+        cd--;
+        if (cd <= 0) { clearInterval(iv); wp.classList.add('hidden'); callback(); }
+        else document.getElementById('wp-countdown').innerText = cd;
+    }, 1000);
+}
+
+// ============ BLACK MARKET ============
+const BM_POOL = [
+    { id:'bm_shield', icon:'🛡️', name:'Emergency Shield', desc:'Get a shield for 1 hit', price:()=>Math.floor(500*wave), apply:()=>{ hasShield=true; updateShieldHUD(); } },
+    { id:'bm_frenzy', icon:'🔥', name:'Frenzy Shot (30s)', desc:'Max fire rate for 30 seconds', price:()=>Math.floor(800*wave), apply:()=>{ activeBuffs.frenzy=30000; } },
+    { id:'bm_money', icon:'💰', name:'2x Money (20s)', desc:'Double all earnings for 20s', price:()=>Math.floor(600*wave), apply:()=>{ activeBuffs.doubleMoney=20000; } },
+    { id:'bm_spread', icon:'💨', name:'Spread Shot (15s)', desc:'Wide spread shot for 15s', price:()=>Math.floor(400*wave), apply:()=>{ activeBuffs.spread=15000; } },
+    { id:'bm_nuke', icon:'💥', name:'Instant Nuke', desc:'Destroy all enemies on screen', price:()=>Math.floor(2000*wave), apply:()=>{ activatePowerup('nuke'); } },
+    { id:'bm_income', icon:'📈', name:'Income Surge', desc:'+50% income this wave', price:()=>Math.floor(1000*wave), apply:()=>{ upg.income.val *= 1.5; } },
+];
+let bmDeals = [];
+function openBlackMarket(afterCallback) {
+    const screen = document.getElementById('blackmarket-screen');
+    screen.classList.remove('hidden');
+    bmDeals = [];
+    let pool = [...BM_POOL];
+    for (let i = 0; i < 3; i++) {
+        const idx = Math.floor(Math.random() * pool.length);
+        bmDeals.push(pool.splice(idx, 1)[0]);
+    }
+    document.getElementById('bm-money').innerText = '$' + formatNumber(money);
+    const dealsEl = document.getElementById('bm-deals');
+    dealsEl.innerHTML = bmDeals.map((d,i) => {
+        const price = d.price();
+        const canAfford = money >= price;
+        return `<div style="background:rgba(170,0,255,0.08);border:1px solid rgba(170,0,255,0.3);border-radius:12px;padding:15px;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:28px">${d.icon}</span>
+            <div style="flex:1"><div style="font-weight:900;color:#fff">${d.name}</div><div style="color:#a0a0b0;font-size:12px">${d.desc}</div></div>
+            <button onclick="buyBMDeal(${i})" ${canAfford?'':'disabled'} style="padding:8px 14px;background:${canAfford?'#aa00ff':'#222'};color:${canAfford?'#fff':'#555'};border:1px solid ${canAfford?'#aa00ff':'#333'};border-radius:8px;font-weight:900;font-size:13px;box-shadow:${canAfford?'0 0 10px rgba(170,0,255,0.5)':'none'}">$${formatNumber(price)}</button>
+        </div>`;
+    }).join('');
+    document.getElementById('btn-bm-skip').onclick = () => { screen.classList.add('hidden'); afterCallback(); };
+}
+function buyBMDeal(i) {
+    const d = bmDeals[i];
+    const price = d.price();
+    if (money < price) return;
+    money -= price;
+    d.apply();
+    document.getElementById('blackmarket-screen').classList.add('hidden');
+    updateMenuUI();
+}
+
+// ============ BACKGROUND MUSIC ============
+let musicNodes = [];
+let musicPlaying = false;
+function startMusic() {
+    if (musicPlaying || masterVolume <= 0) return;
+    musicPlaying = true;
+    playMusicLoop();
+}
+function stopMusic() {
+    musicPlaying = false;
+    musicNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+    musicNodes = [];
+}
+function playMusicLoop() {
+    if (!musicPlaying) return;
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const bassNotes = [55, 55, 65.4, 73.4];
+    const bpm = difficulty === 'impossible' ? 160 : difficulty === 'hard' ? 140 : 120;
+    const beat = 60 / bpm;
+    let t = audioCtx.currentTime;
+    bassNotes.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        osc.connect(gain); gain.connect(masterGain);
+        gain.gain.setValueAtTime(0, t + i*beat);
+        gain.gain.linearRampToValueAtTime(0.06, t + i*beat + 0.05);
+        gain.gain.linearRampToValueAtTime(0, t + i*beat + beat*0.9);
+        osc.start(t + i*beat);
+        osc.stop(t + i*beat + beat);
+        musicNodes.push(osc);
+    });
+    setTimeout(playMusicLoop, bassNotes.length * beat * 1000 * 0.95);
+}
+
+// ============ SHIELD HUD ============
+function updateShieldHUD() {
+    const hud = document.getElementById('hud-shield');
+    if (hud) hud.style.display = hasShield ? 'block' : 'none';
+}
+
 function resize() {
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = canvas.parentElement.clientHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    bgCanvas.width = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
     if (playerY === 0) {
         playerX = canvas.width / 2;
         playerY = canvas.height - 100;
@@ -197,6 +510,8 @@ let isBossWave = false;
 function startWave() {
     gameState = 'PLAYING';
     isPaused = false;
+    waveHitsTaken = 0;
+    killFeedItems = [];
     
     isBossWave = (wave % 10 === 0);
     waveQuota = isBossWave ? 1 : (30 + wave * 15);
@@ -213,18 +528,18 @@ function startWave() {
     hubScreen.classList.add('hidden');
     gameScreen.classList.remove('hidden');
     overlay.classList.add('hidden');
+    bgCanvas.style.display = 'none';
     
     resize();
-    
     playerX = canvas.width / 2;
     playerY = canvas.height - 100;
     
     hudProgress.innerText = `${waveProgress} / ${waveQuota}`;
     updateLivesHUD();
+    updateShieldHUD();
     hudMoney.innerText = '$' + formatNumber(money);
-    
+    startMusic();
     lastTime = performance.now();
-    requestAnimationFrame(gameLoop);
 }
 
 function updateLivesHUD() {
@@ -236,9 +551,121 @@ function updateLivesHUD() {
 }
 
 let lastTime = performance.now();
+let bgParticles = [];
+let bgTargets = [];
+let bgBullets = [];
+let bgPlayerX = window.innerWidth / 2;
+let bgPlayerY = window.innerHeight - 100;
+let bgLastShotTime = 0;
+let bgShootDir = 1;
 
 function gameLoop(currentTime) {
-    if (gameState !== 'PLAYING') return;
+    if (gameState !== 'PLAYING') {
+        const dt = currentTime - lastTime || 16;
+        lastTime = currentTime;
+        
+        bgPlayerY = bgCanvas.height - 100;
+        
+        // Auto player movement
+        bgPlayerX += 150 * bgShootDir * (dt / 1000);
+        if (bgPlayerX < 50) bgShootDir = 1;
+        if (bgPlayerX > bgCanvas.width - 50) bgShootDir = -1;
+        
+        // Auto shooting
+        if (currentTime - bgLastShotTime > 150) {
+            bgLastShotTime = currentTime;
+            bgBullets.push({x: bgPlayerX - 4, y: bgPlayerY - 20, width: 8, height: 20});
+        }
+        
+        // Spawn targets
+        if (Math.random() < 0.03) {
+            let size = 40;
+            let colors = ['#00f3ff', '#ff007a', '#7a00ff', '#ffaa00'];
+            bgTargets.push({
+                x: Math.random() * (bgCanvas.width - size),
+                y: -size,
+                size: size,
+                color: colors[Math.floor(Math.random() * colors.length)]
+            });
+        }
+        
+        // Move bullets
+        for (let i = bgBullets.length - 1; i >= 0; i--) {
+            let b = bgBullets[i];
+            b.y -= 800 * (dt / 1000);
+            if (b.y < -50) bgBullets.splice(i, 1);
+        }
+        
+        // Move targets
+        for (let i = bgTargets.length - 1; i >= 0; i--) {
+            let t = bgTargets[i];
+            t.y += 100 * (dt / 1000);
+            if (t.y > bgCanvas.height) bgTargets.splice(i, 1);
+        }
+        
+        // Check collisions
+        for (let i = bgBullets.length - 1; i >= 0; i--) {
+            let b = bgBullets[i];
+            for (let j = bgTargets.length - 1; j >= 0; j--) {
+                let t = bgTargets[j];
+                if (b.x < t.x + t.size && b.x + b.width > t.x && b.y < t.y + t.size && b.y + b.height > t.y) {
+                    for (let k=0; k<10; k++) {
+                        bgParticles.push({
+                            x: t.x + t.size/2, y: t.y + t.size/2,
+                            vx: (Math.random() - 0.5) * 300, vy: (Math.random() - 0.5) * 300,
+                            color: t.color, size: Math.random() * 4 + 2, life: 1
+                        });
+                    }
+                    bgTargets.splice(j, 1);
+                    bgBullets.splice(i, 1);
+                    break;
+                }
+            }
+        }
+        
+        // Update particles
+        for (let i = bgParticles.length - 1; i >= 0; i--) {
+            let p = bgParticles[i];
+            p.x += p.vx * (dt / 1000);
+            p.y += p.vy * (dt / 1000);
+            p.life -= dt / 1000;
+            if (p.life <= 0) bgParticles.splice(i, 1);
+        }
+        
+        bgCtx.fillStyle = '#0f0f16';
+        bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+        
+        for (let t of bgTargets) {
+            bgCtx.fillStyle = t.color;
+            bgCtx.shadowBlur = 15; bgCtx.shadowColor = t.color;
+            bgCtx.fillRect(t.x, t.y, t.size, t.size);
+        }
+        for (let b of bgBullets) {
+            bgCtx.fillStyle = '#00f3ff';
+            bgCtx.shadowBlur = 10; bgCtx.shadowColor = '#00f3ff';
+            bgCtx.fillRect(b.x, b.y, b.width, b.height);
+        }
+        for (let p of bgParticles) {
+            bgCtx.fillStyle = p.color;
+            bgCtx.globalAlpha = Math.max(0, p.life);
+            bgCtx.fillRect(p.x, p.y, p.size, p.size);
+        }
+        bgCtx.globalAlpha = 1;
+        bgCtx.shadowBlur = 0;
+        
+        // Draw player
+        bgCtx.fillStyle = '#00f3ff';
+        bgCtx.shadowBlur = 20; bgCtx.shadowColor = '#00f3ff';
+        bgCtx.beginPath();
+        bgCtx.moveTo(bgPlayerX, bgPlayerY - 25);
+        bgCtx.lineTo(bgPlayerX + 25, bgPlayerY + 15);
+        bgCtx.lineTo(bgPlayerX - 25, bgPlayerY + 15);
+        bgCtx.fill();
+        bgCtx.shadowBlur = 0;
+        
+        requestAnimationFrame(gameLoop);
+        return;
+    }
     
     if (isPaused) {
         lastTime = currentTime;
@@ -255,6 +682,9 @@ function gameLoop(currentTime) {
     requestAnimationFrame(gameLoop);
 }
 
+// Start loop
+requestAnimationFrame(gameLoop);
+
 let gunRecoil = 0;
 
 function update(dt, time) {
@@ -262,6 +692,19 @@ function update(dt, time) {
     if (activeBuffs.frenzy > 0) activeBuffs.frenzy -= dt;
     if (activeBuffs.doubleMoney > 0) activeBuffs.doubleMoney -= dt;
     if (activeBuffs.spread > 0) activeBuffs.spread -= dt;
+
+    // Update powerup UI
+    let puHTML = '';
+    if (activeBuffs.frenzy > 0) {
+        puHTML += `<div style="background: rgba(255,100,0,0.8); color: #fff; padding: 5px 10px; border-radius: 5px; font-weight: bold; border: 1px solid #ff6400; box-shadow: 0 0 10px #ff6400; text-shadow: 1px 1px 2px #000; font-size: 14px;">🔥 FRENZY: ${(activeBuffs.frenzy/1000).toFixed(1)}s</div>`;
+    }
+    if (activeBuffs.doubleMoney > 0) {
+        puHTML += `<div style="background: rgba(255,215,0,0.8); color: #000; padding: 5px 10px; border-radius: 5px; font-weight: bold; border: 1px solid #ffd700; box-shadow: 0 0 10px #ffd700; font-size: 14px;">💰 2x MONEY: ${(activeBuffs.doubleMoney/1000).toFixed(1)}s</div>`;
+    }
+    if (activeBuffs.spread > 0) {
+        puHTML += `<div style="background: rgba(0,255,100,0.8); color: #000; padding: 5px 10px; border-radius: 5px; font-weight: bold; border: 1px solid #00ff64; box-shadow: 0 0 10px #00ff64; font-size: 14px;">💨 SPREAD: ${(activeBuffs.spread/1000).toFixed(1)}s</div>`;
+    }
+    document.getElementById('powerup-timers').innerHTML = puHTML;
 
     // Auto-fire
     let fireDelay = upg.firerate.val;
@@ -312,19 +755,7 @@ function update(dt, time) {
     for (let i = bullets.length - 1; i >= 0; i--) {
         let b = bullets[i];
         
-        if (b.isHoming && targets.length > 0) {
-            let target = targets[0];
-            let minDist = Infinity;
-            for(let t of targets) {
-                let dist = Math.hypot(t.x - b.x, t.y - b.y);
-                if (dist < minDist) { minDist = dist; target = t; }
-            }
-            let angle = Math.atan2(target.y + target.size/2 - b.y, target.x + target.size/2 - b.x);
-            b.x += Math.cos(angle) * 8 * (dt / 16);
-            b.y += Math.sin(angle) * 8 * (dt / 16);
-        } else {
-            b.y -= 14 * (dt / 16);
-        }
+        b.y -= 14 * (dt / 16);
         
         if (b.y < -50 || b.x < -50 || b.x > canvas.width + 50 || b.y > canvas.height + 50) bullets.splice(i, 1);
     }
@@ -368,14 +799,21 @@ function update(dt, time) {
     }
     
     function takeDamage() {
-        lives--;
-        updateLivesHUD();
-        // Screen flash
-        texts.push({ x: canvas.width/2, y: canvas.height/2, text: '-1 LIFE', color: '#ff0000', life: 1.0 });
-        
-        if (lives <= 0) {
-            endWave(false);
+        if (hasShield) {
+            hasShield = false;
+            updateShieldHUD();
+            localStorage.setItem('neon_ach_shield_save_'+currentUser, '1');
+            triggerShake(5, 200);
+            texts.push({ x: canvas.width/2, y: canvas.height/2-40, text: '🛡️ SHIELD ABSORBED HIT!', color: '#00f3ff', life: 1.5 });
+            createParticles(playerX, playerY, '#00f3ff', 20);
+            return;
         }
+        lives--;
+        waveHitsTaken++;
+        updateLivesHUD();
+        triggerShake(8, 300);
+        texts.push({ x: canvas.width/2, y: canvas.height/2, text: '-1 LIFE', color: '#ff0000', life: 1.0 });
+        if (lives <= 0) endWave(false);
     }
     
     // Collisions
@@ -401,21 +839,28 @@ function update(dt, time) {
                 if (t.hp <= 0) {
                     let multiplier = (activeBuffs.doubleMoney > 0) ? 2 : 1;
                     let bossBonus = t.isBoss ? 5 : 1;
-                    let earned = Math.floor(t.maxHp * upg.income.val * multiplier * bossBonus * (1 + prestigeLevel));
+                    let baseHpForMoney = 5 * Math.pow(1.65, wave - 1);
+                    let earned = Math.floor(baseHpForMoney * upg.income.val * multiplier * bossBonus * (1 + prestigeLevel));
+                    if (earned < 1) earned = 1;
                     money += earned;
                     hudMoney.innerText = '$' + formatNumber(money);
                     
-                    texts.push({ x: t.x + t.size/2, y: t.y, text: '+$' + formatNumber(earned), color: '#00f3ff', life: 1.0 });
+                    // Big text for big kills
+                    const textSize = t.isBoss ? 1.5 : 1;
+                    texts.push({ x: t.x + t.size/2, y: t.y, text: '+$' + formatNumber(earned), color: t.isBoss?'#ffd700':'#00f3ff', life: 1.0 + textSize*0.5, size: textSize });
                     createParticles(t.x + t.size/2, t.y + t.size/2, t.color, t.isBoss ? 100 : 15);
+                    if (t.isBoss) triggerShake(15, 500);
+                    
+                    addKillFeed(t.color);
+                    totalKills++;
+                    incrementDaily('killsT');
+                    checkAchievements();
                     
                     targets.splice(j, 1);
-                    
                     waveProgress++;
                     hudProgress.innerText = `${waveProgress} / ${waveQuota}`;
                     
-                    if (waveProgress >= waveQuota) {
-                        endWave(true);
-                    }
+                    if (waveProgress >= waveQuota) endWave(true);
                 } else {
                     t.flash = 0.1;
                 }
@@ -445,23 +890,35 @@ function update(dt, time) {
         t.life -= dt / 1000;
         if (t.life <= 0) texts.splice(i, 1);
     }
+    // Update kill feed
+    updateKillFeed(dt);
 }
 
 function endWave(victory) {
     gameState = 'END';
+    stopMusic();
     overlay.classList.remove('hidden');
     
     if (victory) {
-        overlayTitle.innerText = 'WAVE CLEARED';
-        overlayTitle.style.color = '#00ff7a';
+        wavesCompleted++;
+        if (waveHitsTaken === 0) {
+            perfectWaves++;
+            incrementDaily('perfectT');
+        }
+        incrementDaily('wavesT');
+        checkAchievements();
+        overlayTitle.innerText = waveHitsTaken===0 ? '✨ PERFECT CLEAR!' : 'WAVE CLEARED';
+        overlayTitle.style.color = waveHitsTaken===0 ? '#ffd700' : '#00ff7a';
         overlayDesc.innerText = `You destroyed ${waveQuota} targets!`;
         
         let waveBonus = Math.floor(100 * wave * upg.income.val * (1 + prestigeLevel));
+        if (waveHitsTaken === 0) waveBonus = Math.floor(waveBonus * 1.5);
         money += waveBonus;
-        overlayReward.innerText = 'Bonus: +$' + formatNumber(waveBonus);
+        overlayReward.innerText = (waveHitsTaken===0?'PERFECT BONUS: ':'Bonus: ') + '+$' + formatNumber(waveBonus);
         
         wave++;
         waveProgress = 0;
+        saveGame();
     } else {
         overlayTitle.innerText = 'WAVE FAILED';
         overlayTitle.style.color = '#ff007a';
@@ -490,18 +947,6 @@ function shoot() {
             height: 25,
             isHoming: false
         });
-    }
-    
-    if (upg.homing.val > 0) {
-        for(let i = 0; i < upg.homing.val; i++) {
-            bullets.push({
-                x: playerX,
-                y: playerY - 30,
-                width: 12,
-                height: 12,
-                isHoming: true
-            });
-        }
     }
     
     gunRecoil = 15;
@@ -570,7 +1015,8 @@ function spawnBoss() {
     let x = (canvas.width - size) / 2;
     let y = -size;
     
-    let hpScale = 5 * Math.pow(1.2, wave - 1);
+    let multiplier = difficulty === 'impossible' ? 10.0 : (difficulty === 'hard' ? 3.0 : 1.65);
+    let hpScale = 5 * Math.pow(multiplier, wave - 1);
     let hp = Math.floor(hpScale * 50); // Massive Boss HP
     
     targets.push({
@@ -588,7 +1034,8 @@ function spawnTarget() {
     let y = -size;
     
     // HP scales with wave
-    let hpScale = 5 * Math.pow(1.2, wave - 1);
+    let multiplier = difficulty === 'impossible' ? 10.0 : (difficulty === 'hard' ? 3.0 : 1.65);
+    let hpScale = 5 * Math.pow(multiplier, wave - 1);
     let hp = Math.floor(Math.random() * hpScale) + hpScale;
     
     let colors = ['#ff007a', '#7a00ff', '#ffaa00', '#00ff7a'];
@@ -616,8 +1063,17 @@ function createParticles(x, y, color, count = 5) {
 }
 
 function draw() {
+    // Screen shake
+    let sx = 0, sy = 0;
+    if (shakeTime > 0) {
+        sx = (Math.random()-0.5)*shakePower;
+        sy = (Math.random()-0.5)*shakePower;
+        ctx.save();
+        ctx.translate(sx, sy);
+    }
+    
     ctx.fillStyle = '#0f0f16';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(-Math.abs(sx)-5, -Math.abs(sy)-5, canvas.width+Math.abs(sx)*2+10, canvas.height+Math.abs(sy)*2+10);
     
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1;
@@ -704,13 +1160,19 @@ function draw() {
     }
     ctx.globalAlpha = 1;
     
-    ctx.font = 'bold 22px Outfit';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     for (let txt of texts) {
+        const scale = txt.size || 1;
+        ctx.font = `bold ${Math.floor(22*scale)}px Outfit`;
         ctx.fillStyle = txt.color;
         ctx.globalAlpha = Math.max(0, Math.min(1, txt.life));
+        ctx.shadowBlur = scale > 1 ? 15 : 0; ctx.shadowColor = txt.color;
         ctx.fillText(txt.text, txt.x, txt.y);
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+    
+    if (shakeTime > 0) { shakeTime -= 16; ctx.restore(); }
 }
 
 // Input Handling
@@ -752,7 +1214,126 @@ canvas.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => { isDragging = false; });
 
 // Hub Navigation
-btnHubPlay.addEventListener('click', startWave);
+btnHubPlay.addEventListener('click', () => {
+    showWavePreview(() => {
+        if (wave > 1 && wave % 5 === 0) {
+            openBlackMarket(startWave);
+        } else {
+            startWave();
+        }
+    });
+});
+
+document.getElementById('btn-hub-achievements').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    document.getElementById('achievements-screen').classList.remove('hidden');
+    renderAchievements();
+});
+document.getElementById('btn-close-achievements').addEventListener('click', () => {
+    document.getElementById('achievements-screen').classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+});
+document.getElementById('btn-hub-daily').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    document.getElementById('daily-screen').classList.remove('hidden');
+    renderDailies();
+});
+document.getElementById('btn-close-daily').addEventListener('click', () => {
+    document.getElementById('daily-screen').classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+});
+
+function updateDifficultyUI() {
+    let mainColor = '#00f3ff';
+    let mainShadow = '0 0 15px rgba(0, 243, 255, 0.5)';
+    
+    if (difficulty === 'easy') {
+        btnDifficulty.innerText = 'MODE: EASY (1.65x)';
+        btnDifficulty.style.background = '#00f3ff';
+        btnDifficulty.style.boxShadow = mainShadow;
+        btnDifficulty.style.color = '#000';
+        btnDifficulty.style.border = 'none';
+    } else if (difficulty === 'hard') {
+        mainColor = '#ff007a';
+        mainShadow = '0 0 15px rgba(255, 0, 122, 0.5)';
+        btnDifficulty.innerText = 'MODE: HARD (3.0x)';
+        btnDifficulty.style.background = mainColor;
+        btnDifficulty.style.boxShadow = mainShadow;
+        btnDifficulty.style.color = '#fff';
+        btnDifficulty.style.border = 'none';
+    } else {
+        mainColor = '#ff0000';
+        mainShadow = '0 0 20px rgba(255, 0, 0, 0.8)';
+        btnDifficulty.innerText = 'MODE: IMPOSSIBLE (10.0x)';
+        btnDifficulty.style.background = '#000';
+        btnDifficulty.style.boxShadow = mainShadow;
+        btnDifficulty.style.color = mainColor;
+        btnDifficulty.style.border = '2px solid #ff0000';
+    }
+
+    // Apply global theming
+    const gameTitle = document.getElementById('game-title');
+    const hubMoney = document.getElementById('hub-money');
+    const settingsTitle = document.getElementById('settings-title');
+    const settingsPanel = document.getElementById('settings-panel');
+    const closeBtn = document.getElementById('btn-close-settings');
+    const volSlider = document.getElementById('volume-slider');
+    
+    if (gameTitle) {
+        gameTitle.style.color = mainColor;
+        gameTitle.style.textShadow = mainShadow;
+    }
+    if (hubMoney) {
+        hubMoney.style.color = mainColor;
+        hubMoney.style.textShadow = mainShadow;
+    }
+    if (settingsTitle) settingsTitle.style.color = mainColor;
+    if (settingsPanel) {
+        settingsPanel.style.borderColor = mainColor;
+        settingsPanel.style.boxShadow = mainShadow;
+    }
+    if (closeBtn) {
+        if (difficulty === 'impossible') {
+            closeBtn.style.background = '#000';
+            closeBtn.style.color = '#ff0000';
+            closeBtn.style.border = '2px solid #ff0000';
+        } else {
+            closeBtn.style.background = mainColor;
+            closeBtn.style.color = difficulty === 'hard' ? '#fff' : '#000';
+            closeBtn.style.border = 'none';
+        }
+        closeBtn.style.boxShadow = mainShadow;
+    }
+    if (volSlider) volSlider.style.accentColor = mainColor;
+    
+    if (btnHubPlay) {
+        if (difficulty === 'impossible') {
+            btnHubPlay.style.background = '#000';
+            btnHubPlay.style.color = '#ff0000';
+            btnHubPlay.style.border = '2px solid #ff0000';
+        } else if (difficulty === 'hard') {
+            btnHubPlay.style.background = 'linear-gradient(135deg, #ff007a, #aa0055)';
+            btnHubPlay.style.color = '#fff';
+            btnHubPlay.style.border = 'none';
+        } else {
+            btnHubPlay.style.background = 'linear-gradient(135deg, #00f3ff, #0088ff)';
+            btnHubPlay.style.color = '#000';
+            btnHubPlay.style.border = 'none';
+        }
+        btnHubPlay.style.boxShadow = mainShadow;
+    }
+}
+
+btnDifficulty.addEventListener('click', () => {
+    saveGame();
+    if (difficulty === 'easy') difficulty = 'hard';
+    else if (difficulty === 'hard') difficulty = 'impossible';
+    else difficulty = 'easy';
+    updateDifficultyUI();
+    loadGame();
+    updateMenuUI();
+});
+
 btnHubUpgrades.addEventListener('click', () => {
     hubScreen.classList.add('hidden');
     menuScreen.classList.remove('hidden');
@@ -766,6 +1347,7 @@ btnBackHub.addEventListener('click', () => {
 btnContinue.addEventListener('click', () => {
     gameScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
+    bgCanvas.style.display = 'block';
     gameState = 'HUB';
     updateMenuUI();
 });
@@ -788,6 +1370,7 @@ btnQuit.addEventListener('click', () => {
     pauseMenu.classList.add('hidden');
     gameScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
+    bgCanvas.style.display = 'block';
     gameState = 'HUB';
     updateMenuUI();
 });
@@ -800,8 +1383,8 @@ btnPrestige.addEventListener('click', () => {
             waveProgress = 0;
             money = 0;
             for (let key in upg) {
-                upg[key].lvl = key === 'homing' ? 0 : 1;
-                upg[key].val = key === 'firerate' ? 800 : (key === 'pierce' || key === 'homing' ? 0 : 1);
+                upg[key].lvl = 1;
+                upg[key].val = key === 'firerate' ? 800 : (key === 'pierce' ? 0 : 1);
             }
             saveGame();
             updateMenuUI();
@@ -822,6 +1405,7 @@ function saveGame() {
         wave: wave,
         waveProgress: waveProgress,
         prestige: prestigeLevel,
+        difficulty: difficulty,
         lastSaveTime: Date.now(),
         upgrades: {
             damage: { lvl: upg.damage.lvl, val: upg.damage.val },
@@ -829,23 +1413,54 @@ function saveGame() {
             income: { lvl: upg.income.lvl, val: upg.income.val },
             multishot: { lvl: upg.multishot.lvl, val: upg.multishot.val },
             spawn: { lvl: upg.spawn.lvl, val: upg.spawn.val },
-            pierce: { lvl: upg.pierce.lvl, val: upg.pierce.val },
-            homing: { lvl: upg.homing.lvl, val: upg.homing.val }
+            pierce: { lvl: upg.pierce.lvl, val: upg.pierce.val }
         }
     };
-    localStorage.setItem('neonGunTycoonSave_' + currentUser, JSON.stringify(saveObj));
+    localStorage.setItem('neonGunTycoonSave_' + difficulty.toUpperCase() + '_' + currentUser, JSON.stringify(saveObj));
     
     // Ping real-time server
     fetch('https://neon-server-crhx.onrender.com/api/update_score', {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ user: currentUser, wave: wave, money: money })
+        body: JSON.stringify({ user: `[${difficulty.toUpperCase()}] ${currentUser}`, wave: wave, money: money })
     }).catch(e => console.log("Backend not connected"));
+
+    // Ping prestige leaderboard
+    if (prestigeLevel > 0) {
+        fetch('https://neon-server-crhx.onrender.com/api/update_score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ user: `[PRESTIGE] ${currentUser}`, wave: prestigeLevel, money: prestigeLevel })
+        }).catch(e => console.log("Backend not connected"));
+    }
+}
+
+function resetGameToDefaults() {
+    wave = 1;
+    waveProgress = 0;
+    money = 0;
+    prestigeLevel = 0;
+    for (let key in upg) {
+        upg[key].lvl = 1;
+        upg[key].val = key === 'firerate' ? 800 : (key === 'pierce' ? 0 : 1);
+    }
 }
 
 function loadGame() {
     if (!currentUser) return;
-    let savedStr = localStorage.getItem('neonGunTycoonSave_' + currentUser);
+    
+    if (difficulty === 'easy' && !localStorage.getItem('neonGunTycoonSave_EASY_' + currentUser)) {
+        let legacyStr = localStorage.getItem('neonGunTycoonSave_' + currentUser);
+        if (legacyStr) {
+            localStorage.setItem('neonGunTycoonSave_EASY_' + currentUser, legacyStr);
+            localStorage.removeItem('neonGunTycoonSave_' + currentUser);
+        }
+    }
+    
+    let savedStr = localStorage.getItem('neonGunTycoonSave_' + difficulty.toUpperCase() + '_' + currentUser);
+    
+    resetGameToDefaults();
+    
     if (savedStr) {
         try {
             let saveObj = JSON.parse(savedStr);
@@ -858,7 +1473,7 @@ function loadGame() {
             if (saveObj.lastSaveTime) {
                 let secondsOffline = Math.floor((Date.now() - saveObj.lastSaveTime) / 1000);
                 if (secondsOffline > 86400) secondsOffline = 86400; // max 24 hours
-                if (secondsOffline > 60) {
+                if (secondsOffline > 60 && (wave > 1 || money > 0)) {
                     let idleRate = wave * upg.income.val * 2 * (1 + prestigeLevel);
                     let earned = secondsOffline * idleRate;
                     money += earned;
@@ -898,6 +1513,11 @@ if (lastUser) {
     let accs = JSON.parse(localStorage.getItem('neonAccounts') || '{}');
     if (accs[lastUser]) {
         currentUser = lastUser;
+        if (typeof accs[lastUser] === 'string') {
+            accs[lastUser] = { pass: accs[lastUser], uid: Math.random().toString(36).substr(2, 8).toUpperCase() };
+            localStorage.setItem('neonAccounts', JSON.stringify(accs));
+        }
+        currentUserUid = accs[lastUser].uid;
         loadGame();
         
         loginScreen.classList.add('hidden');
@@ -919,19 +1539,30 @@ document.getElementById('btn-login').addEventListener('click', () => {
     
     let accs = JSON.parse(localStorage.getItem('neonAccounts') || '{}');
     if (accs[u]) {
-        if (accs[u] !== p) {
+        if (typeof accs[u] === 'string') {
+            if (accs[u] !== p) {
+                document.getElementById('login-error').innerText = "Wrong password!";
+                document.getElementById('login-error').style.display = "block";
+                return;
+            }
+            accs[u] = { pass: p, uid: Math.random().toString(36).substr(2, 8).toUpperCase() };
+            localStorage.setItem('neonAccounts', JSON.stringify(accs));
+        } else if (accs[u].pass !== p) {
             document.getElementById('login-error').innerText = "Wrong password!";
             document.getElementById('login-error').style.display = "block";
             return;
         }
     } else {
-        accs[u] = p; 
+        accs[u] = { pass: p, uid: Math.random().toString(36).substr(2, 8).toUpperCase() }; 
         localStorage.setItem('neonAccounts', JSON.stringify(accs));
     }
     
     currentUser = u;
+    currentUserUid = accs[u].uid;
     localStorage.setItem('neonLastUser', u);
-    loadGame(); 
+    loadGame();
+    loadAchievements();
+    loadDailies();
     
     loginScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
@@ -939,48 +1570,165 @@ document.getElementById('btn-login').addEventListener('click', () => {
     updateMenuUI();
 });
 
-btnHubLb.addEventListener('click', async () => {
-    hubScreen.classList.add('hidden');
-    lbScreen.classList.remove('hidden');
-    
+let currentLbMode = 'waves';
+
+async function refreshLeaderboard() {
     let lbList = document.getElementById('lb-list');
-    lbList.innerHTML = '<div style="text-align:center; padding: 20px;">Loading real-time data...</div>';
+    lbList.innerHTML = `<div style="text-align:center; padding: 20px;">Loading leaderboards...</div>`;
     
     try {
         let res = await fetch('https://neon-server-crhx.onrender.com/api/leaderboard');
         let lb = await res.json();
         
         lbList.innerHTML = '';
-        if (lb.length === 0) {
-            lbList.innerHTML = '<div style="text-align:center; padding: 20px;">No players yet! Play a wave to rank up.</div>';
+        
+        let diffPrefix = currentLbMode === 'prestiges' ? '[PRESTIGE]' : `[${difficulty.toUpperCase()}]`;
+        let filteredLb = lb.filter(entry => entry.user.startsWith(diffPrefix));
+        
+        let diffTitle = document.createElement('div');
+        diffTitle.style.textAlign = 'center';
+        diffTitle.style.color = currentLbMode === 'prestiges' ? '#ffd700' : (difficulty === 'impossible' ? '#ff0000' : (difficulty === 'hard' ? '#ff007a' : '#00f3ff'));
+        diffTitle.style.fontWeight = '900';
+        diffTitle.style.fontSize = '24px';
+        diffTitle.style.marginBottom = '20px';
+        diffTitle.innerText = currentLbMode === 'prestiges' ? 'PRESTIGE LEADERBOARD' : `${difficulty.toUpperCase()} MODE LEADERBOARD`;
+        lbList.appendChild(diffTitle);
+        
+        if (filteredLb.length === 0) {
+            lbList.innerHTML += '<div style="text-align:center; padding: 20px;">No players on this leaderboard yet!</div>';
             return;
         }
         
-        lb.forEach((entry, idx) => {
+        filteredLb.forEach((entry, idx) => {
             let rankClass = '';
             if (idx === 0) rankClass = 'gold';
             else if (idx === 1) rankClass = 'silver';
             else if (idx === 2) rankClass = 'bronze';
             
+            let displayUser = entry.user.replace(diffPrefix + ' ', '');
+            let isMe = displayUser === currentUser;
+            
             let item = document.createElement('div');
             item.className = 'lb-item';
             item.innerHTML = `
                 <div class="lb-rank ${rankClass}">#${idx+1}</div>
-                <div class="lb-name">${entry.user === currentUser ? entry.user + ' (YOU)' : entry.user}</div>
+                <div class="lb-name">${isMe ? displayUser + ' (YOU)' : displayUser}</div>
                 <div class="lb-stats">
-                    <div class="lb-wave">WAVE ${entry.wave}</div>
-                    <div class="lb-money">$${formatNumber(entry.money)}</div>
+                    <div class="lb-wave">${currentLbMode === 'prestiges' ? 'PRESTIGE ' : 'WAVE '}${entry.wave}</div>
+                    <div class="lb-money" style="${currentLbMode === 'prestiges' ? 'display:none;' : ''}">$${formatNumber(entry.money)}</div>
                 </div>
             `;
-            if (entry.user === currentUser) item.style.border = '1px solid #00f3ff';
+            if (isMe) item.style.border = '1px solid #00f3ff';
             lbList.appendChild(item);
         });
     } catch(e) {
         lbList.innerHTML = '<div style="text-align:center; padding: 20px; color: #ff007a;">Failed to connect to real-time server.<br><br>Make sure you run <b>python server.py</b> in the game folder!</div>';
     }
+}
+
+document.getElementById('btn-lb-waves').addEventListener('click', () => {
+    currentLbMode = 'waves';
+    document.getElementById('btn-lb-waves').style.background = '#00f3ff';
+    document.getElementById('btn-lb-waves').style.color = '#000';
+    document.getElementById('btn-lb-waves').style.boxShadow = '0 0 10px rgba(0,243,255,0.5)';
+    
+    document.getElementById('btn-lb-prestiges').style.background = '#2a2a45';
+    document.getElementById('btn-lb-prestiges').style.color = '#fff';
+    document.getElementById('btn-lb-prestiges').style.boxShadow = 'none';
+    refreshLeaderboard();
+});
+
+document.getElementById('btn-lb-prestiges').addEventListener('click', () => {
+    currentLbMode = 'prestiges';
+    document.getElementById('btn-lb-prestiges').style.background = '#ffd700';
+    document.getElementById('btn-lb-prestiges').style.color = '#000';
+    document.getElementById('btn-lb-prestiges').style.boxShadow = '0 0 10px rgba(255,215,0,0.5)';
+    
+    document.getElementById('btn-lb-waves').style.background = '#2a2a45';
+    document.getElementById('btn-lb-waves').style.color = '#fff';
+    document.getElementById('btn-lb-waves').style.boxShadow = 'none';
+    refreshLeaderboard();
+});
+
+btnHubLb.addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    lbScreen.classList.remove('hidden');
+    refreshLeaderboard();
 });
 
 document.getElementById('btn-close-lb').addEventListener('click', () => {
     lbScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
+});
+
+const settingsScreen = document.getElementById('settings-screen');
+const volSlider = document.getElementById('volume-slider');
+const volValue = document.getElementById('vol-value');
+
+volSlider.value = masterVolume;
+volValue.innerText = Math.round(masterVolume * 100);
+
+volSlider.addEventListener('input', (e) => {
+    masterVolume = parseFloat(e.target.value);
+    masterGain.gain.value = masterVolume;
+    volValue.innerText = Math.round(masterVolume * 100);
+    localStorage.setItem('neonVolume', masterVolume);
+});
+
+document.getElementById('btn-hub-settings').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    settingsScreen.classList.remove('hidden');
+    document.getElementById('settings-uid').innerText = currentUserUid;
+});
+
+document.getElementById('btn-close-settings').addEventListener('click', () => {
+    settingsScreen.classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+});
+
+document.getElementById('btn-wipe-save').addEventListener('click', () => {
+    if (confirm("Are you absolutely sure you want to reset your progress? This only deletes saves on YOUR device!")) {
+        let keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            let key = localStorage.key(i);
+            if (key && key.startsWith('neonGunTycoonSave_')) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        
+        resetGameToDefaults();
+        saveGame();
+        updateMenuUI();
+    }
+});
+
+// Owner Panel Listeners
+const ownerScreen = document.getElementById('owner-screen');
+document.getElementById('btn-owner-panel').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    ownerScreen.classList.remove('hidden');
+});
+document.getElementById('btn-close-owner').addEventListener('click', () => {
+    ownerScreen.classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+});
+document.getElementById('btn-owner-money').addEventListener('click', () => {
+    money += 100000000000;
+    saveGame();
+    updateMenuUI();
+    alert('+ $100,000,000,000 ADDED');
+});
+document.getElementById('btn-owner-wave').addEventListener('click', () => {
+    wave += 10;
+    saveGame();
+    updateMenuUI();
+    alert('+ 10 WAVES ADDED');
+});
+document.getElementById('btn-owner-buff').addEventListener('click', () => {
+    activeBuffs.frenzy = 60000;
+    activeBuffs.doubleMoney = 60000;
+    activeBuffs.spread = 60000;
+    saveGame();
+    alert('ALL BUFFS ACTIVATED FOR 60s');
 });
