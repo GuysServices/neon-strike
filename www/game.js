@@ -50,6 +50,28 @@ let money = 0;
 let prestigeLevel = 0;
 let difficulty = 'easy';
 
+// Cosmetics State
+const COSMETICS = {
+    player: [
+        { id: 'player_default', name: 'Neon Cyan', color: '#00f3ff', price: 0 },
+        { id: 'player_red', name: 'Blazing Red', color: '#ff0055', price: 50000 },
+        { id: 'player_green', name: 'Electric Green', color: '#00ff7a', price: 100000 },
+        { id: 'player_purple', name: 'Royal Purple', color: '#aa00ff', price: 250000 },
+        { id: 'player_gold', name: 'Pure Gold', color: '#ffd700', price: 1000000 },
+        { id: 'player_void', name: 'Void Black', color: '#111', borderColor: '#00f3ff', price: 5000000 }
+    ],
+    bullet: [
+        { id: 'bullet_default', name: 'Cyan Pulse', color: '#00f3ff', price: 0 },
+        { id: 'bullet_red', name: 'Plasma Red', color: '#ff0055', price: 75000 },
+        { id: 'bullet_green', name: 'Toxic Green', color: '#00ff7a', price: 150000 },
+        { id: 'bullet_rainbow', name: 'Rainbow', color: 'rainbow', price: 2000000 }
+    ]
+};
+let ownedSkins = ['player_default', 'bullet_default'];
+let equippedPlayerSkin = 'player_default';
+let equippedBulletSkin = 'bullet_default';
+let currentSkinTab = 'player';
+
 // Audio Engine
 let masterVolume = parseFloat(localStorage.getItem('neonVolume') || '1.0');
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -320,6 +342,61 @@ function renderAchievements() {
         </div>`;
     }).join('');
 }
+
+// ============ COSMETICS SYSTEM ============
+function renderCosmetics() {
+    const list = document.getElementById('skins-list');
+    const moneyEl = document.getElementById('skins-money');
+    if (!list || !moneyEl) return;
+    moneyEl.innerText = '$' + formatNumber(money);
+    
+    const items = COSMETICS[currentSkinTab];
+    list.innerHTML = items.map(item => {
+        const isOwned = ownedSkins.includes(item.id);
+        const isEquipped = (currentSkinTab === 'player' ? equippedPlayerSkin : equippedBulletSkin) === item.id;
+        
+        let previewHTML = '';
+        if (currentSkinTab === 'player') {
+            previewHTML = `<div style="width:0; height:0; border-left:15px solid transparent; border-right:15px solid transparent; border-bottom:30px solid ${item.color}; filter:drop-shadow(0 0 5px ${item.color});"></div>`;
+        } else {
+            previewHTML = `<div style="width:8px; height:20px; background:${item.color === 'rainbow' ? 'linear-gradient(to bottom, red, orange, yellow, green, cyan, blue, purple)' : item.color}; box-shadow:0 0 10px ${item.color === 'rainbow' ? 'white' : item.color};"></div>`;
+        }
+
+        return `
+            <div class="cosmetic-card ${isOwned ? 'owned' : ''} ${isEquipped ? 'equipped' : ''}" onclick="handleCosmeticClick('${item.id}')">
+                <div class="cosmetic-preview">${previewHTML}</div>
+                <div class="cosmetic-name">${item.name}</div>
+                <div class="cosmetic-price ${isOwned ? 'owned' : ''}">
+                    ${isEquipped ? 'EQUIPPED' : isOwned ? 'EQUIP' : '$' + formatNumber(item.price)}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function handleCosmeticClick(id) {
+    const item = COSMETICS[currentSkinTab].find(i => i.id === id);
+    if (ownedSkins.includes(id)) {
+        if (currentSkinTab === 'player') equippedPlayerSkin = id;
+        else equippedBulletSkin = id;
+        playSound('buy');
+    } else {
+        if (money >= item.price) {
+            money -= item.price;
+            ownedSkins.push(id);
+            if (currentSkinTab === 'player') equippedPlayerSkin = id;
+            else equippedBulletSkin = id;
+            playSound('buy');
+        } else {
+            return;
+        }
+    }
+    saveGame();
+    renderCosmetics();
+}
+
+window.handleCosmeticClick = handleCosmeticClick;
+
 
 // ============ DAILY CHALLENGES ============
 const DAILY_DEFS = [
@@ -939,13 +1016,22 @@ function shoot() {
     
     let startX = playerX - ((shots - 1) * spread) / 2;
     
+    let bulletColor = '#00f3ff';
+    const bSkin = COSMETICS.bullet.find(s => s.id === equippedBulletSkin);
+    if (bSkin) bulletColor = bSkin.color;
+
     for (let i = 0; i < shots; i++) {
+        let finalColor = bulletColor;
+        if (bulletColor === 'rainbow') {
+            finalColor = `hsl(${(performance.now() / 5) % 360}, 100%, 50%)`;
+        }
         bullets.push({
             x: startX + (i * spread) - 4,
             y: playerY - 30,
             width: 8,
             height: 25,
-            isHoming: false
+            isHoming: false,
+            color: finalColor
         });
     }
     
@@ -1111,8 +1197,8 @@ function draw() {
             ctx.fillStyle = '#ffd700';
             ctx.shadowColor = '#ffd700';
         } else {
-            ctx.fillStyle = '#00f3ff';
-            ctx.shadowColor = '#00f3ff';
+            ctx.fillStyle = b.color || '#00f3ff';
+            ctx.shadowColor = b.color || '#00f3ff';
         }
         ctx.fillRect(b.x, b.y, b.width, b.height);
     }
@@ -1136,14 +1222,27 @@ function draw() {
     if (gunRecoil > 0) gunRecoil -= 1.5;
     let visualGunY = playerY + gunRecoil;
     
-    ctx.fillStyle = '#00f3ff';
+    let pColor = '#00f3ff';
+    let pBorder = null;
+    const pSkin = COSMETICS.player.find(s => s.id === equippedPlayerSkin);
+    if (pSkin) {
+        pColor = pSkin.color;
+        pBorder = pSkin.borderColor;
+    }
+
+    ctx.fillStyle = pColor;
     ctx.shadowBlur = 20;
-    ctx.shadowColor = '#00f3ff';
+    ctx.shadowColor = pColor;
     ctx.beginPath();
     ctx.moveTo(playerX, visualGunY - 25);
     ctx.lineTo(playerX + 25, visualGunY + 15);
     ctx.lineTo(playerX - 25, visualGunY + 15);
     ctx.fill();
+    if (pBorder) {
+        ctx.strokeStyle = pBorder;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
     ctx.shadowBlur = 0;
     
     ctx.fillStyle = '#fff';
@@ -1407,6 +1506,9 @@ function saveGame() {
         prestige: prestigeLevel,
         difficulty: difficulty,
         lastSaveTime: Date.now(),
+        ownedSkins: ownedSkins,
+        equippedPlayerSkin: equippedPlayerSkin,
+        equippedBulletSkin: equippedBulletSkin,
         upgrades: {
             damage: { lvl: upg.damage.lvl, val: upg.damage.val },
             firerate: { lvl: upg.firerate.lvl, val: upg.firerate.val },
@@ -1460,6 +1562,9 @@ function loadGame() {
     let savedStr = localStorage.getItem('neonGunTycoonSave_' + difficulty.toUpperCase() + '_' + currentUser);
     
     resetGameToDefaults();
+    ownedSkins = ['player_default', 'bullet_default'];
+    equippedPlayerSkin = 'player_default';
+    equippedBulletSkin = 'bullet_default';
     
     if (savedStr) {
         try {
@@ -1468,6 +1573,9 @@ function loadGame() {
             if (typeof saveObj.wave === 'number') wave = saveObj.wave;
             if (typeof saveObj.waveProgress === 'number') waveProgress = saveObj.waveProgress;
             if (typeof saveObj.prestige === 'number') prestigeLevel = saveObj.prestige;
+            if (saveObj.ownedSkins) ownedSkins = saveObj.ownedSkins;
+            if (saveObj.equippedPlayerSkin) equippedPlayerSkin = saveObj.equippedPlayerSkin;
+            if (saveObj.equippedBulletSkin) equippedBulletSkin = saveObj.equippedBulletSkin;
             
             // Offline Earnings Calculation
             if (saveObj.lastSaveTime) {
@@ -1731,4 +1839,45 @@ document.getElementById('btn-owner-buff').addEventListener('click', () => {
     activeBuffs.spread = 60000;
     saveGame();
     alert('ALL BUFFS ACTIVATED FOR 60s');
+});
+
+// Tab Listeners
+document.getElementById('tab-player-skins').addEventListener('click', () => {
+    currentSkinTab = 'player';
+    document.getElementById('tab-player-skins').style.background = '#00f3ff';
+    document.getElementById('tab-player-skins').style.color = '#000';
+    document.getElementById('tab-bullet-skins').style.background = 'transparent';
+    document.getElementById('tab-bullet-skins').style.color = '#fff';
+    renderCosmetics();
+});
+
+document.getElementById('tab-bullet-skins').addEventListener('click', () => {
+    currentSkinTab = 'bullet';
+    document.getElementById('tab-bullet-skins').style.background = '#00f3ff';
+    document.getElementById('tab-bullet-skins').style.color = '#000';
+    document.getElementById('tab-player-skins').style.background = 'transparent';
+    document.getElementById('tab-player-skins').style.color = '#fff';
+    renderCosmetics();
+});
+
+document.getElementById('btn-hub-skins').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    document.getElementById('skins-screen').classList.remove('hidden');
+    renderCosmetics();
+});
+
+document.getElementById('btn-close-skins').addEventListener('click', () => {
+    document.getElementById('skins-screen').classList.add('hidden');
+    hubScreen.classList.remove('hidden');
+    updateMenuUI();
+});
+
+document.getElementById('btn-hub-achievements').addEventListener('click', () => {
+    hubScreen.classList.add('hidden');
+    document.getElementById('achievements-screen').classList.remove('hidden');
+    renderAchievements();
+});
+document.getElementById('btn-close-achievements').addEventListener('click', () => {
+    document.getElementById('achievements-screen').classList.add('hidden');
+    hubScreen.classList.remove('hidden');
 });

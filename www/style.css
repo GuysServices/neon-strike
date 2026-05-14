@@ -239,3 +239,30 @@ canvas { display: block; width: 100%; height: 100%; }
 .lb-stats { text-align: right; }
 .lb-wave { color: #ff007a; font-weight: 900; }
 .lb-money { color: #00f3ff; font-weight: 700; font-size: 14px;}
+
+/* --- COSMETICS --- */
+.cosmetic-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    padding: 20px;
+}
+.cosmetic-card {
+    background: rgba(30, 30, 50, 0.8);
+    border-radius: 15px;
+    padding: 15px;
+    text-align: center;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+.cosmetic-card.owned { border-color: rgba(255, 255, 255, 0.1); }
+.cosmetic-card.equipped { border-color: #00f3ff; box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
+.cosmetic-preview {
+    width: 60px; height: 60px; margin: 0 auto 10px;
+    display: flex; align-items: center; justify-content: center;
+}
+.cosmetic-name { font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+.cosmetic-price { color: #00f3ff; font-weight: 900; font-size: 16px; }
+.cosmetic-price.owned { color: #a0a0b0; font-size: 12px; }
+

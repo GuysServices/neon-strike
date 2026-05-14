@@ -54,10 +54,13 @@
                     <button id="btn-hub-settings" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">⚙️ SETTINGS</button>
                 </div>
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
-                    <button id="btn-hub-achievements" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🎖️ ACHIEVEMENTS</button>
-                    <button id="btn-hub-daily" style="flex: 1; padding: 15px 10px; background: linear-gradient(135deg, #1a0030, #0a0020); color: #aa00ff; border: 1px solid #aa00ff; box-shadow: 0 0 10px rgba(170,0,255,0.3); font-size: 14px;">⚡ DAILY</button>
+                    <button id="btn-hub-achievements" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🎖️ MILESTONES</button>
+                    <button id="btn-hub-skins" style="flex: 1; padding: 15px 10px; background: linear-gradient(135deg, #00f3ff, #0088ff); color: #000; box-shadow: 0 0 10px rgba(0,243,255,0.3); font-size: 14px; font-weight: 900;">🎨 SKINS</button>
                 </div>
-                <button id="btn-difficulty" style="margin-bottom: 20px; background: #00f3ff; color: #000; box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);">MODE: EASY (1.65x)</button>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-daily" style="flex: 1; padding: 15px 10px; background: linear-gradient(135deg, #1a0030, #0a0020); color: #aa00ff; border: 1px solid #aa00ff; box-shadow: 0 0 10px rgba(170,0,255,0.3); font-size: 14px;">⚡ DAILY</button>
+                    <button id="btn-difficulty" style="flex: 1; padding: 15px 10px; background: #00f3ff; color: #000; box-shadow: 0 0 15px rgba(0, 243, 255, 0.5); font-size: 14px;">MODE: EASY</button>
+                </div>
                 <button id="btn-wipe-save" style="margin-bottom: 20px; background: transparent; color: #ff0000; border: 1px solid #ff0000; padding: 10px; font-size: 14px; box-shadow: none; width: 100%;">⚠️ RESET ALL SAVES</button>
                 <button id="btn-owner-panel" class="hidden" style="background: linear-gradient(135deg, #ff0000, #ff007a); color: #fff; font-weight: 900; box-shadow: 0 0 20px rgba(255, 0, 122, 0.8);">👑 OWNER PANEL</button>
             </div>
@@ -235,6 +238,22 @@
                 <button id="btn-close-achievements" style="width:auto; padding:10px 20px; font-size:16px;">BACK</button>
             </div>
             <div id="ach-list" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+
+        <!-- COSMETICS SCREEN -->
+        <div id="skins-screen" class="screen hidden" style="background: rgba(10,10,25,0.98);">
+            <div class="menu-header">
+                <div><span style="color:#00f3ff; font-weight:900;">🎨 COSMETIC STORE</span></div>
+                <div id="skins-money" style="color:#00f3ff; font-weight:900;">$0</div>
+            </div>
+            <div style="display: flex; background: rgba(0,0,0,0.3); padding: 10px;">
+                <button id="tab-player-skins" style="flex: 1; font-size: 14px; padding: 10px; background: #00f3ff; color: #000;">PLAYER</button>
+                <button id="tab-bullet-skins" style="flex: 1; font-size: 14px; padding: 10px; background: transparent; color: #fff; box-shadow: none;">BULLETS</button>
+            </div>
+            <div id="skins-list" class="cosmetic-grid" style="flex: 1; overflow-y: auto;"></div>
+            <div class="menu-footer">
+                <button id="btn-close-skins" style="background: #ff007a;">BACK TO MENU</button>
+            </div>
         </div>
 
         <!-- DAILY CHALLENGE SCREEN -->
