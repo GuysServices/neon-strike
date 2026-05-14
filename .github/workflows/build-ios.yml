@@ -25,7 +25,10 @@ jobs:
       - name: Generate App Icons
         run: |
           npm install @capacitor/assets
-          npx capacitor-assets generate --icon icon.png --ios
+          mkdir -p assets
+          cp icon.png assets/icon-only.png
+          cp icon.png assets/splash-only.png
+          npx capacitor-assets generate --ios
           
       - name: Sync iOS
         run: npx cap sync ios
