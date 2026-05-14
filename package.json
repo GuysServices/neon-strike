@@ -1,7 +1,7 @@
 {
-  "name": "capacitor-app",
+  "name": "neon-strike",
   "version": "1.0.0",
-  "description": "An Amazing Capacitor App",
+  "description": "Neon Strike - Arcade Tycoon Shooter",
   "type": "module",
   "keywords": [
     "capacitor",
