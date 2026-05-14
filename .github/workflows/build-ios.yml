@@ -1,5 +1,8 @@
 name: Build iOS IPA
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,7 +21,14 @@ jobs:
         run: |
           npm install @capacitor/ios
           npx cap add ios || echo "iOS already added"
-          npx cap sync ios
+          
+      - name: Generate App Icons
+        run: |
+          npm install @capacitor/assets
+          npx capacitor-assets generate --icon icon.png --ios
+          
+      - name: Sync iOS
+        run: npx cap sync ios
           
       - name: Build iOS App (Unsigned)
         run: |
