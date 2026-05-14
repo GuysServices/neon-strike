@@ -1881,3 +1881,23 @@ document.getElementById('btn-close-achievements').addEventListener('click', () =
     document.getElementById('achievements-screen').classList.add('hidden');
     hubScreen.classList.remove('hidden');
 });
+
+// --- LOADING LOGIC ---
+window.addEventListener('load', () => {
+    const fill = document.getElementById('loader-bar-fill');
+    const screen = document.getElementById('loading-screen');
+    let p = 0;
+    const interval = setInterval(() => {
+        p += Math.random() * 15;
+        if (p >= 100) {
+            p = 100;
+            clearInterval(interval);
+            setTimeout(() => {
+                screen.style.opacity = '0';
+                setTimeout(() => screen.classList.add('hidden'), 800);
+            }, 500);
+        }
+        fill.style.width = p + '%';
+    }, 100);
+});
+
