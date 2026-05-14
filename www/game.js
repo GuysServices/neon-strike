@@ -1607,6 +1607,16 @@ function loadGame() {
 // Auto-save every 2 seconds
 setInterval(saveGame, 2000);
 
+function generateUID(u, p) {
+    let str = u.toLowerCase() + ":" + p;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash).toString(36).toUpperCase().padStart(8, '0');
+}
+
 // Passive menu update
 setInterval(() => {
     if (gameState === 'HUB' || gameState === 'MENU') updateMenuUI();
@@ -1622,7 +1632,7 @@ if (lastUser) {
     if (accs[lastUser]) {
         currentUser = lastUser;
         if (typeof accs[lastUser] === 'string') {
-            accs[lastUser] = { pass: accs[lastUser], uid: Math.random().toString(36).substr(2, 8).toUpperCase() };
+            accs[lastUser] = { pass: accs[lastUser], uid: generateUID(lastUser, accs[lastUser]) };
             localStorage.setItem('neonAccounts', JSON.stringify(accs));
         }
         currentUserUid = accs[lastUser].uid;
@@ -1653,7 +1663,7 @@ document.getElementById('btn-login').addEventListener('click', () => {
                 document.getElementById('login-error').style.display = "block";
                 return;
             }
-            accs[u] = { pass: p, uid: Math.random().toString(36).substr(2, 8).toUpperCase() };
+            accs[u] = { pass: p, uid: generateUID(u, p) };
             localStorage.setItem('neonAccounts', JSON.stringify(accs));
         } else if (accs[u].pass !== p) {
             document.getElementById('login-error').innerText = "Wrong password!";
@@ -1661,7 +1671,7 @@ document.getElementById('btn-login').addEventListener('click', () => {
             return;
         }
     } else {
-        accs[u] = { pass: p, uid: Math.random().toString(36).substr(2, 8).toUpperCase() }; 
+        accs[u] = { pass: p, uid: generateUID(u, p) }; 
         localStorage.setItem('neonAccounts', JSON.stringify(accs));
     }
     
