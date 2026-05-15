@@ -243,11 +243,12 @@ canvas { display: block; width: 100%; height: 100%; }
 /* --- COSMETICS --- */
 .cosmetic-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 15px;
     padding: 20px;
 }
 .cosmetic-card {
+    position: relative;
     background: rgba(30, 30, 50, 0.8);
     border-radius: 15px;
     padding: 15px;
@@ -255,14 +256,56 @@ canvas { display: block; width: 100%; height: 100%; }
     border: 2px solid transparent;
     transition: all 0.2s;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 .cosmetic-card.owned { border-color: rgba(255, 255, 255, 0.1); }
 .cosmetic-card.equipped { border-color: #00f3ff; box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
 .cosmetic-preview {
-    width: 60px; height: 60px; margin: 0 auto 10px;
+    width: 50px; height: 50px; margin: 0 auto 10px;
     display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
 }
-.cosmetic-name { font-weight: 700; font-size: 14px; margin-bottom: 5px; }
+.cosmetic-name { font-weight: 700; font-size: 12px; margin-bottom: 5px; }
 .cosmetic-price { color: #00f3ff; font-weight: 900; font-size: 16px; }
 .cosmetic-price.owned { color: #a0a0b0; font-size: 12px; }
 
+/* --- LOADING SCREEN --- */
+#loading-screen {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.8s ease-out;
+}
+#loading-logo {
+    width: 200px;
+    height: 200px;
+    border-radius: 40px;
+    margin-bottom: 30px;
+    box-shadow: 0 0 50px rgba(0, 243, 255, 0.3);
+    border: 2px solid rgba(0, 243, 255, 0.5);
+    background-image: url('assets/logo.png');
+    background-size: cover;
+    background-position: center;
+}
+.loader-bar-container {
+    width: 250px;
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+#loader-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #00f3ff, #ff007a);
+    box-shadow: 0 0 15px #00f3ff;
+    transition: width 0.3s;
+}

@@ -9,6 +9,12 @@ const menuScreen = document.getElementById('menu-screen');
 const gameScreen = document.getElementById('game-screen');
 const overlay = document.getElementById('overlay');
 
+const SERVER_URL = 'https://neon-server-crhx.onrender.com';
+const safeListen = (id, event, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, fn);
+};
+
 const hubScreen = document.getElementById('hub-screen');
 const btnHubPlay = document.getElementById('btn-hub-play');
 const btnHubUpgrades = document.getElementById('btn-hub-upgrades');
@@ -40,8 +46,205 @@ const idleAmount = document.getElementById('idle-amount');
 const btnCollectIdle = document.getElementById('btn-collect-idle');
 
 // Game State
-const OWNER_IDS = ['GWHT00U4', 'U95I7XBL', '5HF0MWUJ', 'V20DJ5G5'];
+const OWNER_IDS = ['GWHT00U4', 'U95I7XBL', '5HF0MWUJ', 'V20DJ5G5', '32X416GA'];
 let gameState = 'LOGIN'; // LOGIN, MENU, PLAYING, END
+
+// --- TRADING HUB STATE ---
+let incomingTrades = [];
+let tradeOfferYourItems = [];
+let tradeOfferTheirItems = [];
+let tradeTargetName = "";
+
+// Tab Switching Logic (handled by switchTradeTab below)
+
+function renderTradeRequests() {
+    const list = document.getElementById('trade-request-list');
+    const badge = document.getElementById('trade-notify-badge');
+    if (!list || !badge) return;
+    
+    if (incomingTrades.length === 0) {
+        list.innerHTML = `<div style="text-align:center; padding:40px; color:#505070;">No pending requests.</div>`;
+        badge.classList.add('hidden');
+        return;
+    }
+    
+    badge.classList.remove('hidden');
+    badge.innerText = incomingTrades.length;
+    
+    list.innerHTML = incomingTrades.map((req, idx) => `
+        <div class="lb-item" style="border-color:#ff007a; background:rgba(255,0,122,0.05); margin-bottom:10px;">
+            <div style="flex:1;">
+                <div class="lb-name" style="color:#ff007a;">INCOMING: ${req.from}</div>
+                <div style="font-size:10px; opacity:0.6; color:#fff;">Wants to trade with you!</div>
+            </div>
+            <div style="display:flex; gap:5px;">
+                <button onclick="acceptTradeRequest(${idx})" style="width:auto; padding:8px 15px; font-size:11px; background:#00ff7a; color:#000; font-weight:900;">ACCEPT</button>
+                <button onclick="declineTradeRequest(${idx})" style="width:auto; padding:8px 15px; font-size:11px; background:#333; color:#fff; border:none;">✕</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function acceptTradeRequest(idx) {
+    const req = incomingTrades[idx];
+    
+    // Check if you have the items they requested
+    const tempInv = [...inventory];
+    let hasAll = true;
+    req.request.forEach(id => {
+        const i = tempInv.indexOf(id);
+        if (i === -1) hasAll = false;
+        else tempInv.splice(i, 1);
+    });
+
+    if (!hasAll) {
+        alert("You don't have the items requested in this trade!");
+        incomingTrades.splice(idx, 1);
+        renderTradeRequests();
+        return;
+    }
+
+    // Process trade
+    req.request.forEach(id => {
+        const i = inventory.indexOf(id);
+        if (i > -1) inventory.splice(i, 1);
+    });
+    req.offer.forEach(id => {
+        inventory.push(id);
+        if (!ownedSkins.includes(id)) ownedSkins.push(id);
+    });
+
+    // Notify server
+    if (req.id && typeof req.id === 'number') {
+        await fetch(`${SERVER_URL}/api/complete_trade`, {
+            method: 'POST',
+            body: JSON.stringify({ tradeId: req.id, action: 'accept' })
+        });
+    }
+
+    incomingTrades.splice(idx, 1);
+    saveGame();
+    renderTradeRequests();
+    renderInventory();
+    alert("🤝 TRADE COMPLETED!");
+}
+
+window.acceptTradeRequest = acceptTradeRequest; // Make global for onclick
+
+function declineTradeRequest(idx) {
+    incomingTrades.splice(idx, 1);
+    renderTradeRequests();
+}
+
+window.declineTradeRequest = declineTradeRequest; // Make global for onclick
+
+let currentTradeRoom = null;
+let tradeLocked = false;
+
+// Real-Time Trade Polling
+setInterval(async () => {
+    if (!currentUser || gameState !== 'HUB') return;
+    
+    try {
+        // 1. Check for incoming invites if NOT in a room
+        if (!currentTradeRoom) {
+            const res = await fetch(`${SERVER_URL}/api/find_trade?user=${currentUser}`);
+            const invites = await res.json();
+            if (invites.length > 0) {
+                const inv = invites[0];
+                if (confirm(`INCOMING TRADE: ${inv.from} wants to trade live! Join?`)) {
+                    joinTradeRoom(inv.id);
+                }
+            }
+        } else {
+            // 2. Sync active room
+            const res = await fetch(`${SERVER_URL}/api/trade_room?id=${currentTradeRoom}`);
+            const room = await res.json();
+            
+            if (room.status === 'completed') {
+                finalizeLiveTrade(room);
+                return;
+            }
+
+            // Update UI with remote data
+            const isFrom = room.from === currentUser;
+            tradeOfferYourItems = isFrom ? room.offer_from : room.offer_to;
+            tradeOfferTheirItems = isFrom ? room.offer_to : room.offer_from;
+            
+            const myLocked = isFrom ? room.lock_from : room.lock_to;
+            const theirLocked = isFrom ? room.lock_to : room.lock_from;
+            
+            document.getElementById('trade-your-status').innerText = myLocked ? '🔒 LOCKED' : '⏳ EDITING...';
+            document.getElementById('trade-your-status').style.color = myLocked ? '#00ff7a' : '#ffaa00';
+            
+            document.getElementById('trade-their-status').innerText = theirLocked ? '🔒 LOCKED' : '⏳ EDITING...';
+            document.getElementById('trade-their-status').style.color = theirLocked ? '#00ff7a' : '#ffaa00';
+            
+            // Enable/Disable Complete button
+            const completeBtn = document.getElementById('btn-send-trade');
+            if (myLocked && theirLocked) {
+                completeBtn.classList.remove('disabled');
+                completeBtn.style.background = "#00ff7a";
+                completeBtn.style.color = "#000";
+                completeBtn.style.opacity = "1";
+            } else {
+                completeBtn.classList.add('disabled');
+                completeBtn.style.background = "#505070";
+                completeBtn.style.color = "#fff";
+                completeBtn.style.opacity = "0.5";
+            }
+            
+            updateTradeUI();
+        }
+    } catch (e) {}
+}, 1000);
+
+async function joinTradeRoom(roomId) {
+    currentTradeRoom = roomId;
+    tradeLocked = false;
+    await fetch(`${SERVER_URL}/api/join_trade`, {
+        method: 'POST',
+        body: JSON.stringify({ room_id: roomId })
+    });
+    document.getElementById('trade-modal').classList.remove('hidden');
+    document.getElementById('btn-lock-trade').classList.remove('hidden');
+    document.getElementById('btn-lock-trade').innerText = "🔒 LOCK OFFER";
+}
+
+async function syncLiveTrade() {
+    if (!currentTradeRoom) return;
+    await fetch(`${SERVER_URL}/api/sync_trade`, {
+        method: 'POST',
+        body: JSON.stringify({
+            room_id: currentTradeRoom,
+            user: currentUser,
+            offer: tradeOfferYourItems,
+            lock: tradeLocked
+        })
+    });
+}
+
+function finalizeLiveTrade(room) {
+    const isFrom = room.from === currentUser;
+    const finalYourItems = isFrom ? room.offer_from : room.offer_to;
+    const finalTheirItems = isFrom ? room.offer_to : room.offer_from;
+    
+    // Process items
+    finalYourItems.forEach(id => {
+        const idx = inventory.indexOf(id);
+        if (idx > -1) inventory.splice(idx, 1);
+    });
+    finalTheirItems.forEach(id => {
+        inventory.push(id);
+        if (!ownedSkins.includes(id)) ownedSkins.push(id);
+    });
+    
+    saveGame();
+    alert("🤝 LIVE TRADE COMPLETED!");
+    currentTradeRoom = null;
+    document.getElementById('trade-modal').classList.add('hidden');
+    renderInventory();
+}
 let isPaused = false;
 let currentUser = null;
 let currentUserUid = null;
@@ -49,35 +252,69 @@ let wave = 1;
 let money = 0;
 let prestigeLevel = 0;
 let difficulty = 'easy';
+let godMode = false;
+let lastGodModeText = 0;
+
+// Cosmetics State
+// Rarity Definitions
+const RARITY = {
+    COMMON: { name: 'COMMON', color: '#a0a0b0', weight: 60, value: 1 },
+    RARE: { name: 'RARE', color: '#00f3ff', weight: 25, value: 5 },
+    EPIC: { name: 'EPIC', color: '#aa00ff', weight: 10, value: 20 },
+    LEGENDARY: { name: 'LEGENDARY', color: '#ffd700', weight: 5, value: 100 },
+    OWNER: { name: 'OWNER', color: '#ff0000', weight: 0, value: 99999 }
+};
 
 // Cosmetics State
 const COSMETICS = {
     player: [
-        { id: 'player_default', name: 'Neon Cyan', color: '#00f3ff', price: 0 },
-        { id: 'player_red', name: 'Blazing Red', color: '#ff0055', price: 50000 },
-        { id: 'player_green', name: 'Electric Green', color: '#00ff7a', price: 100000 },
-        { id: 'player_purple', name: 'Royal Purple', color: '#aa00ff', price: 250000 },
-        { id: 'player_gold', name: 'Pure Gold', color: '#ffd700', price: 1000000 },
-        { id: 'player_void', name: 'Void Black', color: '#111', borderColor: '#00f3ff', price: 5000000 }
+        { id: 'player_default', name: 'Neon Cyan', color: '#00f3ff', rarity: 'COMMON', price: 0 },
+        { id: 'player_red', name: 'Blazing Red', color: '#ff0055', rarity: 'COMMON', price: 50000 },
+        { id: 'player_green', name: 'Electric Green', color: '#00ff7a', rarity: 'RARE', price: 100000 },
+        { id: 'player_purple', name: 'Royal Purple', color: '#aa00ff', rarity: 'RARE', price: 250000 },
+        { id: 'player_gold', name: 'Pure Gold', color: '#ffd700', rarity: 'EPIC', price: 1000000 },
+        { id: 'player_void', name: 'Blood Void', color: '#000', borderColor: '#ff0000', glow: '#ff0000', rarity: 'LEGENDARY', price: 5000000 },
+        { id: 'player_galaxy', name: 'Galaxy Core', color: '#ff00ff', borderColor: '#00ffff', glow: '#ff00ff', rarity: 'LEGENDARY', price: 10000000 },
+        { id: 'player_unicorn', name: 'Mystic Unicorn', color: '#ff66ff', borderColor: '#00ffff', glow: '#ffd700', rarity: 'LEGENDARY', price: 15000000, isEmoji: true },
+        { id: 'player_alien', name: 'Cosmic Alien', color: '#00ff88', borderColor: '#00ffaa', glow: '#00ff88', rarity: 'EPIC', price: 3000000, isEmoji: true },
+        { id: 'player_skull', name: 'Skull King', color: '#ffffff', borderColor: '#ff0000', glow: '#ff4444', rarity: 'LEGENDARY', price: 20000000, isEmoji: true },
+        { id: 'player_crown', name: 'Royal Crown', color: '#ffd700', borderColor: '#ff8800', glow: '#ffd700', rarity: 'EPIC', price: 5000000, isEmoji: true },
+        { id: 'player_ghost', name: 'Phantom', color: '#ccccff', borderColor: '#8888ff', glow: '#aaaaff', rarity: 'RARE', price: 1000000, isEmoji: true },
+        { id: 'player_trident', name: 'Poseidon', color: '#00ccff', borderColor: '#0066ff', glow: '#00aaff', rarity: 'OWNER', price: Infinity, isEmoji: true, isOwner: true },
+        { id: 'player_lightning', name: 'Thunder God', color: '#ffff00', borderColor: '#ff8800', glow: '#ffff00', rarity: 'OWNER', price: Infinity, isEmoji: true, isOwner: true },
+        { id: 'player_diamond', name: 'Diamond Core', color: '#b9f2ff', borderColor: '#00ffff', glow: '#b9f2ff', rarity: 'OWNER', price: Infinity, isEmoji: true, isOwner: true },
+        { id: 'player_vortex', name: 'Void Vortex', color: '#8800ff', borderColor: '#ff00ff', glow: '#aa00ff', rarity: 'OWNER', price: Infinity, isEmoji: true, isOwner: true }
     ],
     bullet: [
-        { id: 'bullet_default', name: 'Cyan Pulse', color: '#00f3ff', price: 0 },
-        { id: 'bullet_red', name: 'Plasma Red', color: '#ff0055', price: 75000 },
-        { id: 'bullet_green', name: 'Toxic Green', color: '#00ff7a', price: 150000 },
-        { id: 'bullet_rainbow', name: 'Rainbow', color: 'rainbow', price: 2000000 }
+        { id: 'bullet_default', name: 'Cyan Pulse', color: '#00f3ff', rarity: 'COMMON', price: 0 },
+        { id: 'bullet_red', name: 'Plasma Red', color: '#ff0055', rarity: 'COMMON', price: 75000 },
+        { id: 'bullet_green', name: 'Toxic Green', color: '#00ff7a', rarity: 'RARE', price: 150000 },
+        { id: 'bullet_rainbow', name: 'Rainbow', color: 'rainbow', rarity: 'EPIC', price: 2000000 },
+        { id: 'bullet_gold', name: 'Gold Tracers', color: '#ffd700', rarity: 'LEGENDARY', price: 5000000 },
+        { id: 'bullet_inferno', name: 'Inferno Rounds', color: '#ff4400', rarity: 'OWNER', price: Infinity, isOwner: true },
+        { id: 'bullet_void', name: 'Void Beams', color: '#8800ff', rarity: 'OWNER', price: Infinity, isOwner: true },
+        { id: 'bullet_plasma', name: 'Plasma Storm', color: '#ff0066', rarity: 'OWNER', price: Infinity, isOwner: true },
+        { id: 'bullet_divine', name: 'Divine Light', color: '#ffffff', rarity: 'OWNER', price: Infinity, isOwner: true }
     ]
 };
-let ownedSkins = ['player_default', 'bullet_default'];
+
+let inventory = ['player_default', 'bullet_default']; // Stores all instances
+let ownedSkins = ['player_default', 'bullet_default']; // For backwards compatibility & simple checking
 let equippedPlayerSkin = 'player_default';
 let equippedBulletSkin = 'bullet_default';
 let currentSkinTab = 'player';
 
 // Audio Engine
 let masterVolume = parseFloat(localStorage.getItem('neonVolume') || '1.0');
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const masterGain = audioCtx.createGain();
-masterGain.connect(audioCtx.destination);
-masterGain.gain.value = masterVolume;
+let audioCtx, masterGain;
+try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+    masterGain.gain.value = masterVolume;
+} catch (e) {
+    console.warn("Audio Context blocked or failed:", e);
+}
 
 function playSound(type) {
     if (masterVolume <= 0) return;
@@ -350,7 +587,7 @@ function renderCosmetics() {
     if (!list || !moneyEl) return;
     moneyEl.innerText = '$' + formatNumber(money);
     
-    const items = COSMETICS[currentSkinTab];
+    const items = COSMETICS[currentSkinTab].filter(i => !i.isEmoji && !i.isOwner);
     list.innerHTML = items.map(item => {
         const isOwned = ownedSkins.includes(item.id);
         const isEquipped = (currentSkinTab === 'player' ? equippedPlayerSkin : equippedBulletSkin) === item.id;
@@ -495,7 +732,9 @@ const BM_POOL = [
     { id:'bm_income', icon:'📈', name:'Income Surge', desc:'+50% income this wave', price:()=>Math.floor(1000*wave), apply:()=>{ upg.income.val *= 1.5; } },
 ];
 let bmDeals = [];
+let bmCallback = null;
 function openBlackMarket(afterCallback) {
+    bmCallback = afterCallback;
     const screen = document.getElementById('blackmarket-screen');
     screen.classList.remove('hidden');
     bmDeals = [];
@@ -515,7 +754,7 @@ function openBlackMarket(afterCallback) {
             <button onclick="buyBMDeal(${i})" ${canAfford?'':'disabled'} style="padding:8px 14px;background:${canAfford?'#aa00ff':'#222'};color:${canAfford?'#fff':'#555'};border:1px solid ${canAfford?'#aa00ff':'#333'};border-radius:8px;font-weight:900;font-size:13px;box-shadow:${canAfford?'0 0 10px rgba(170,0,255,0.5)':'none'}">$${formatNumber(price)}</button>
         </div>`;
     }).join('');
-    document.getElementById('btn-bm-skip').onclick = () => { screen.classList.add('hidden'); afterCallback(); };
+    document.getElementById('btn-bm-skip').onclick = () => { screen.classList.add('hidden'); if(bmCallback) bmCallback(); };
 }
 function buyBMDeal(i) {
     const d = bmDeals[i];
@@ -525,6 +764,7 @@ function buyBMDeal(i) {
     d.apply();
     document.getElementById('blackmarket-screen').classList.add('hidden');
     updateMenuUI();
+    if (bmCallback) bmCallback();
 }
 
 // ============ BACKGROUND MUSIC ============
@@ -876,6 +1116,14 @@ function update(dt, time) {
     }
     
     function takeDamage() {
+        if (godMode) {
+            let now = Date.now();
+            if (now - lastGodModeText > 2000) {
+                texts.push({ x: playerX, y: playerY - 40, text: '😇 GOD MODE!', color: '#ffff00', life: 1.5 });
+                lastGodModeText = now;
+            }
+            return;
+        }
         if (hasShield) {
             hasShield = false;
             updateShieldHUD();
@@ -1074,7 +1322,8 @@ function activatePowerup(type) {
                     t.flash = 0.5;
                 }
             } else {
-                earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier * (1 + prestigeLevel));
+                let nukeMult = (difficulty === 'impossible') ? 0.1 : (difficulty === 'hard' ? 0.3 : 1.0);
+                earnedTotal += Math.floor(t.maxHp * upg.income.val * multiplier * (1 + prestigeLevel) * nukeMult);
                 createParticles(t.x + t.size/2, t.y + t.size/2, t.color, 10);
                 waveProgress++;
                 targets.splice(i, 1);
@@ -1224,33 +1473,48 @@ function draw() {
     
     let pColor = '#00f3ff';
     let pBorder = null;
+    let pGlow = '#00f3ff';
     const pSkin = COSMETICS.player.find(s => s.id === equippedPlayerSkin);
     if (pSkin) {
         pColor = pSkin.color;
         pBorder = pSkin.borderColor;
+        pGlow = pSkin.glow || pColor;
     }
 
-    ctx.fillStyle = pColor;
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = pColor;
-    ctx.beginPath();
-    ctx.moveTo(playerX, visualGunY - 25);
-    ctx.lineTo(playerX + 25, visualGunY + 15);
-    ctx.lineTo(playerX - 25, visualGunY + 15);
-    ctx.fill();
-    if (pBorder) {
-        ctx.strokeStyle = pBorder;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+    const EMOJI_MAP = { player_unicorn: '🦄', player_alien: '👽', player_skull: '💀', player_crown: '👑', player_ghost: '👻', player_trident: '🔱', player_lightning: '⚡', player_diamond: '💎', player_vortex: '🌀' };
+    if (EMOJI_MAP[equippedPlayerSkin]) {
+        ctx.font = '50px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = pGlow;
+        ctx.fillText(EMOJI_MAP[equippedPlayerSkin], playerX, visualGunY - 5);
+        ctx.shadowBlur = 0;
+    } else {
+        ctx.fillStyle = pColor;
+        ctx.shadowBlur = 15; // Tighter glow
+        ctx.shadowColor = pGlow;
+        ctx.beginPath();
+        ctx.moveTo(playerX, visualGunY - 25);
+        ctx.lineTo(playerX + 25, visualGunY + 15);
+        ctx.lineTo(playerX - 25, visualGunY + 15);
+        ctx.fill();
+        if (pBorder) {
+            ctx.strokeStyle = pBorder;
+            ctx.lineWidth = 1.5; // Thinner, sharper outline
+            ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        
+        // Power Core Detail
+        ctx.fillStyle = pGlow;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = pGlow;
+        ctx.beginPath();
+        ctx.arc(playerX, visualGunY + 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
     }
-    ctx.shadowBlur = 0;
-    
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(playerX, visualGunY - 10);
-    ctx.lineTo(playerX + 10, visualGunY + 10);
-    ctx.lineTo(playerX - 10, visualGunY + 10);
-    ctx.fill();
     
     for (let p of particles) {
         ctx.fillStyle = p.color;
@@ -1506,6 +1770,7 @@ function saveGame() {
         prestige: prestigeLevel,
         difficulty: difficulty,
         lastSaveTime: Date.now(),
+        inventory: inventory,
         ownedSkins: ownedSkins,
         equippedPlayerSkin: equippedPlayerSkin,
         equippedBulletSkin: equippedBulletSkin,
@@ -1521,7 +1786,7 @@ function saveGame() {
     localStorage.setItem('neonGunTycoonSave_' + difficulty.toUpperCase() + '_' + currentUser, JSON.stringify(saveObj));
     
     // Ping real-time server
-    fetch('https://neon-server-crhx.onrender.com/api/update_score', {
+    fetch(`${SERVER_URL}/api/update_score`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ user: `[${difficulty.toUpperCase()}] ${currentUser}`, wave: wave, money: money })
@@ -1529,7 +1794,7 @@ function saveGame() {
 
     // Ping prestige leaderboard
     if (prestigeLevel > 0) {
-        fetch('https://neon-server-crhx.onrender.com/api/update_score', {
+        fetch(`${SERVER_URL}/api/update_score`, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: JSON.stringify({ user: `[PRESTIGE] ${currentUser}`, wave: prestigeLevel, money: prestigeLevel })
@@ -1542,6 +1807,8 @@ function resetGameToDefaults() {
     waveProgress = 0;
     money = 0;
     prestigeLevel = 0;
+    inventory = ['player_default', 'bullet_default'];
+    ownedSkins = ['player_default', 'bullet_default'];
     for (let key in upg) {
         upg[key].lvl = 1;
         upg[key].val = key === 'firerate' ? 800 : (key === 'pierce' ? 0 : 1);
@@ -1562,9 +1829,6 @@ function loadGame() {
     let savedStr = localStorage.getItem('neonGunTycoonSave_' + difficulty.toUpperCase() + '_' + currentUser);
     
     resetGameToDefaults();
-    ownedSkins = ['player_default', 'bullet_default'];
-    equippedPlayerSkin = 'player_default';
-    equippedBulletSkin = 'bullet_default';
     
     if (savedStr) {
         try {
@@ -1573,6 +1837,7 @@ function loadGame() {
             if (typeof saveObj.wave === 'number') wave = saveObj.wave;
             if (typeof saveObj.waveProgress === 'number') waveProgress = saveObj.waveProgress;
             if (typeof saveObj.prestige === 'number') prestigeLevel = saveObj.prestige;
+            if (saveObj.inventory) inventory = saveObj.inventory;
             if (saveObj.ownedSkins) ownedSkins = saveObj.ownedSkins;
             if (saveObj.equippedPlayerSkin) equippedPlayerSkin = saveObj.equippedPlayerSkin;
             if (saveObj.equippedBulletSkin) equippedBulletSkin = saveObj.equippedBulletSkin;
@@ -1695,7 +1960,7 @@ async function refreshLeaderboard() {
     lbList.innerHTML = `<div style="text-align:center; padding: 20px;">Loading leaderboards...</div>`;
     
     try {
-        let res = await fetch('https://neon-server-crhx.onrender.com/api/leaderboard');
+        let res = await fetch(`${SERVER_URL}/api/leaderboard`);
         let lb = await res.json();
         
         lbList.innerHTML = '';
@@ -1744,37 +2009,47 @@ async function refreshLeaderboard() {
     }
 }
 
-document.getElementById('btn-lb-waves').addEventListener('click', () => {
+safeListen('btn-lb-waves', 'click', () => {
     currentLbMode = 'waves';
-    document.getElementById('btn-lb-waves').style.background = '#00f3ff';
-    document.getElementById('btn-lb-waves').style.color = '#000';
-    document.getElementById('btn-lb-waves').style.boxShadow = '0 0 10px rgba(0,243,255,0.5)';
-    
-    document.getElementById('btn-lb-prestiges').style.background = '#2a2a45';
-    document.getElementById('btn-lb-prestiges').style.color = '#fff';
-    document.getElementById('btn-lb-prestiges').style.boxShadow = 'none';
+    const btn = document.getElementById('btn-lb-waves');
+    if (btn) {
+        btn.style.background = '#00f3ff';
+        btn.style.color = '#000';
+        btn.style.boxShadow = '0 0 10px rgba(0,243,255,0.5)';
+    }
+    const btnP = document.getElementById('btn-lb-prestiges');
+    if (btnP) {
+        btnP.style.background = '#2a2a45';
+        btnP.style.color = '#fff';
+        btnP.style.boxShadow = 'none';
+    }
     refreshLeaderboard();
 });
 
-document.getElementById('btn-lb-prestiges').addEventListener('click', () => {
+safeListen('btn-lb-prestiges', 'click', () => {
     currentLbMode = 'prestiges';
-    document.getElementById('btn-lb-prestiges').style.background = '#ffd700';
-    document.getElementById('btn-lb-prestiges').style.color = '#000';
-    document.getElementById('btn-lb-prestiges').style.boxShadow = '0 0 10px rgba(255,215,0,0.5)';
-    
-    document.getElementById('btn-lb-waves').style.background = '#2a2a45';
-    document.getElementById('btn-lb-waves').style.color = '#fff';
-    document.getElementById('btn-lb-waves').style.boxShadow = 'none';
+    const btn = document.getElementById('btn-lb-prestiges');
+    if (btn) {
+        btn.style.background = '#ffd700';
+        btn.style.color = '#000';
+        btn.style.boxShadow = '0 0 10px rgba(255,215,0,0.5)';
+    }
+    const btnW = document.getElementById('btn-lb-waves');
+    if (btnW) {
+        btnW.style.background = '#2a2a45';
+        btnW.style.color = '#fff';
+        btnW.style.boxShadow = 'none';
+    }
     refreshLeaderboard();
 });
 
-btnHubLb.addEventListener('click', () => {
+safeListen('btn-hub-lb', 'click', () => {
     hubScreen.classList.add('hidden');
     lbScreen.classList.remove('hidden');
     refreshLeaderboard();
 });
 
-document.getElementById('btn-close-lb').addEventListener('click', () => {
+safeListen('btn-close-lb', 'click', () => {
     lbScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
 });
@@ -1793,18 +2068,18 @@ volSlider.addEventListener('input', (e) => {
     localStorage.setItem('neonVolume', masterVolume);
 });
 
-document.getElementById('btn-hub-settings').addEventListener('click', () => {
+safeListen('btn-hub-settings', 'click', () => {
     hubScreen.classList.add('hidden');
     settingsScreen.classList.remove('hidden');
     document.getElementById('settings-uid').innerText = currentUserUid;
 });
 
-document.getElementById('btn-close-settings').addEventListener('click', () => {
+safeListen('btn-close-settings', 'click', () => {
     settingsScreen.classList.add('hidden');
     hubScreen.classList.remove('hidden');
 });
 
-document.getElementById('btn-wipe-save').addEventListener('click', () => {
+safeListen('btn-wipe-save', 'click', () => {
     if (confirm("Are you absolutely sure you want to reset your progress? This only deletes saves on YOUR device!")) {
         let keysToRemove = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -1851,6 +2126,120 @@ document.getElementById('btn-owner-buff').addEventListener('click', () => {
     alert('ALL BUFFS ACTIVATED FOR 60s');
 });
 
+document.getElementById('btn-owner-nuke').addEventListener('click', () => {
+    targets.forEach(t => {
+        spawnExplosion(t.x, t.y, '#ff4400');
+        spawnText(t.x, t.y, '☢️ NUKE', '#ff4400');
+    });
+    targets = [];
+    waveQuota = 0;
+    alert('WAVE NUKED!');
+});
+
+document.getElementById('btn-owner-skins').addEventListener('click', () => {
+    COSMETICS.player.forEach(s => { if (!ownedSkins.includes(s.id)) ownedSkins.push(s.id); });
+    COSMETICS.bullet.forEach(s => { if (!ownedSkins.includes(s.id)) ownedSkins.push(s.id); });
+    saveGame();
+    alert('ALL SKINS UNLOCKED!');
+});
+
+document.getElementById('btn-owner-max').addEventListener('click', () => {
+    for (let key in upg) {
+        upg[key].lvl = 999;
+        if (key === 'damage') upg.damage.val = 1e100; // Googol Damage
+        if (key === 'firerate') upg.firerate.val = 30; // Max speed
+        if (key === 'income') upg.income.val = 1e50; // Quindecillion income
+        if (key === 'multishot') upg.multishot.val = 20; // 20 bullets
+        if (key === 'spawn') upg.spawn.val = 50; // Max spawn speed
+        if (key === 'pierce') upg.pierce.val = 10000; // 10k Pierce (Infinite)
+    }
+    money = 1e100;
+    saveGame();
+    updateMenuUI();
+    alert('🌌 CENTILLION MODE ACTIVATED! Nothing can stop you now.');
+});
+
+document.getElementById('btn-owner-god').addEventListener('click', () => {
+    godMode = !godMode;
+    alert('GOD MODE: ' + (godMode ? 'ON' : 'OFF'));
+});
+
+document.getElementById('btn-owner-prestige').addEventListener('click', () => {
+    prestigeLevel++;
+    saveGame();
+    updateMenuUI();
+    alert('PRESTIGE ADDED! Current Level: ' + prestigeLevel);
+});
+
+document.getElementById('btn-owner-crate').addEventListener('click', () => {
+    // Owner crate is free - just open it directly
+    const overlay = document.getElementById('crate-anim-overlay');
+    const roll = document.getElementById('crate-opening-roll');
+    overlay.classList.remove('hidden');
+    
+    roll.style.position = 'absolute';
+    roll.style.left = '0';
+    roll.style.paddingLeft = '0px';
+    roll.style.width = '10000px';
+    roll.style.transition = 'none';
+    roll.style.transform = 'translateX(50vw)';
+    void roll.offsetWidth;
+    
+    let pool = [...COSMETICS.player, ...COSMETICS.bullet].filter(it => it.isOwner);
+    if (pool.length === 0) pool = [...COSMETICS.player, ...COSMETICS.bullet];
+    
+    roll.innerHTML = '';
+    const rollCount = 50;
+    let winningItem = null;
+
+    const CRATE_EMOJI = { player_trident: '🔱', player_lightning: '⚡', player_diamond: '💎', player_vortex: '🌀', bullet_inferno: '🔥', bullet_void: '🕳️', bullet_plasma: '⚡', bullet_divine: '✨' };
+
+    for (let i = 0; i < rollCount; i++) {
+        const item = pool[Math.floor(Math.random() * pool.length)];
+        if (i === 45) winningItem = item;
+        
+        const card = document.createElement('div');
+        card.style.minWidth = '150px';
+        card.style.width = '150px';
+        card.style.height = '200px';
+        card.style.flexShrink = '0';
+        card.style.background = '#1a0000';
+        card.style.border = '4px solid #ff0000';
+        card.style.borderRadius = '15px';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'center';
+        card.style.justifyContent = 'center';
+        card.style.gap = '10px';
+        card.style.boxShadow = '0 0 15px rgba(255,0,0,0.3)';
+        
+        const emoji = CRATE_EMOJI[item.id] || '👑';
+        const typeLabel = item.id.includes('bullet') ? '🔫 BULLET' : '🛸 PLAYER';
+        let previewHTML = `<div style="font-size:40px;">${emoji}</div>`;
+        card.innerHTML = `
+            ${previewHTML}
+            <div style="color:#fff; font-weight:bold; font-size:12px; text-align:center;">${item.name}</div>
+            <div style="color:#ff0000; font-size:10px; font-weight:900;">OWNER EXCLUSIVE</div>
+            <div style="color:#aaa; font-size:9px;">${typeLabel}</div>
+        `;
+        roll.appendChild(card);
+    }
+
+    setTimeout(() => {
+        roll.style.transition = 'transform 4s cubic-bezier(0.15, 0, 0.15, 1)';
+        const offset = Math.random() * 100 - 50;
+        roll.style.transform = `translateX(calc(50vw - ${45 * 160 + 75 + offset}px))`;
+    }, 100);
+
+    setTimeout(() => {
+        inventory.push(winningItem.id);
+        if (!ownedSkins.includes(winningItem.id)) ownedSkins.push(winningItem.id);
+        saveGame();
+        alert(`👑 OWNER DROP: ${winningItem.name}!`);
+        overlay.classList.add('hidden');
+    }, 4500);
+});
+
 // Tab Listeners
 document.getElementById('tab-player-skins').addEventListener('click', () => {
     currentSkinTab = 'player';
@@ -1882,32 +2271,520 @@ document.getElementById('btn-close-skins').addEventListener('click', () => {
     updateMenuUI();
 });
 
-document.getElementById('btn-hub-achievements').addEventListener('click', () => {
-    hubScreen.classList.add('hidden');
-    document.getElementById('achievements-screen').classList.remove('hidden');
-    renderAchievements();
-});
-document.getElementById('btn-close-achievements').addEventListener('click', () => {
-    document.getElementById('achievements-screen').classList.add('hidden');
-    hubScreen.classList.remove('hidden');
+// ============ MARKET & TRADING SYSTEM ============
+
+function openCrate(type) {
+    const cost = 10000000;
+    if (money < cost) return alert(`Not enough money! Need $${formatNumber(cost)}.`);
+    money -= cost;
+    updateMenuUI();
+    
+    const overlay = document.getElementById('crate-anim-overlay');
+    const roll = document.getElementById('crate-opening-roll');
+    overlay.classList.remove('hidden');
+    
+    // Reset animation state
+    roll.style.position = 'absolute';
+    roll.style.left = '0';
+    roll.style.paddingLeft = '0px';
+    roll.style.width = '10000px'; // Force browser to render all items without clipping
+    roll.style.transition = 'none';
+    roll.style.transform = 'translateX(50vw)';
+    
+    // Force browser to register the reset before animating
+    void roll.offsetWidth;
+    
+    // Generate items for the roll - all non-owner items in one pool
+    let pool = [...COSMETICS.player, ...COSMETICS.bullet].filter(it => !it.isOwner);
+    if (pool.length === 0) pool = [...COSMETICS.player, ...COSMETICS.bullet]; // Fallback
+    
+    // Item-specific drop weights (lower = rarer, Unicorn is hardest)
+    const ITEM_WEIGHTS = {
+        player_unicorn: 1,    // Ultra-rare (hardest to get)
+        player_skull: 3,      // Very rare
+        player_galaxy: 5,     // Rare legendary
+        player_alien: 8,      // Uncommon emoji
+        player_crown: 8,      // Uncommon emoji
+        player_ghost: 12      // Common emoji
+    };
+    
+    function pickItem() {
+        // First pick rarity tier
+        const rand = Math.random() * 100;
+        let rarityKey = 'COMMON';
+        if (rand < 2) rarityKey = 'LEGENDARY';       // 2% legendary
+        else if (rand < 10) rarityKey = 'EPIC';       // 8% epic
+        else if (rand < 35) rarityKey = 'RARE';       // 25% rare
+        
+        let candidates = pool.filter(it => it.rarity === rarityKey);
+        if (candidates.length === 0) candidates = pool;
+        
+        // Weighted random selection within the rarity tier
+        const weights = candidates.map(it => ITEM_WEIGHTS[it.id] || 10);
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+        let roll = Math.random() * totalWeight;
+        for (let j = 0; j < candidates.length; j++) {
+            roll -= weights[j];
+            if (roll <= 0) return candidates[j];
+        }
+        return candidates[candidates.length - 1];
+    }
+    
+    roll.innerHTML = '';
+    const rollCount = 50;
+    let winningItem = null;
+
+    for (let i = 0; i < rollCount; i++) {
+        const item = pickItem();
+        
+        if (i === 45) winningItem = item; // 45 is our target index
+        
+        const card = document.createElement('div');
+        card.style.minWidth = '150px';
+        card.style.width = '150px';
+        card.style.height = '200px';
+        card.style.flexShrink = '0'; // Prevent mobile browsers from shrinking items
+        card.style.background = '#1a1a2e';
+        card.style.border = `4px solid ${RARITY[item.rarity].color}`;
+        card.style.borderRadius = '15px';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'center';
+        card.style.justifyContent = 'center';
+        card.style.gap = '10px';
+        
+        const CRATE_EMOJI = { player_unicorn: '🦄', player_alien: '👽', player_skull: '💀', player_crown: '👑', player_ghost: '👻', player_trident: '🔱', player_lightning: '⚡', player_diamond: '💎', player_vortex: '🌀' };
+        let iconHTML;
+        if (CRATE_EMOJI[item.id]) {
+            iconHTML = `<div style="font-size:40px;">${CRATE_EMOJI[item.id]}</div>`;
+        } else if (item.id.includes('bullet')) {
+            const bColor = item.color === 'rainbow' ? 'linear-gradient(to bottom, red, orange, yellow, green, cyan, blue, purple)' : item.color;
+            iconHTML = `<div style="width:8px;height:30px;background:${bColor};box-shadow:0 0 12px ${item.color === 'rainbow' ? '#fff' : item.color};border-radius:3px;"></div>`;
+        } else {
+            const triColor = item.color || '#00f3ff';
+            const triGlow = item.glow || triColor;
+            iconHTML = `<svg width="45" height="45" viewBox="0 0 45 45"><polygon points="22.5,5 40,40 5,40" fill="${triColor}" style="filter:drop-shadow(0 0 8px ${triGlow})"/>${item.borderColor ? `<polygon points="22.5,5 40,40 5,40" fill="none" stroke="${item.borderColor}" stroke-width="2"/>` : ''}</svg>`;
+        }
+        
+        card.innerHTML = `
+            ${iconHTML}
+            <div style="color:#fff; font-weight:bold; font-size:12px; text-align:center;">${item.name}</div>
+            <div style="color:${RARITY[item.rarity].color}; font-size:10px; font-weight:900;">${item.rarity}</div>
+        `;
+        roll.appendChild(card);
+    }
+
+    setTimeout(() => {
+        // Restore transition for smooth rolling
+        roll.style.transition = 'transform 4s cubic-bezier(0.15, 0, 0.15, 1)';
+        // Add a slight random offset so it doesn't land on the exact dead center pixel every time
+        const offset = Math.random() * 100 - 50;
+        roll.style.transform = `translateX(calc(50vw - ${45 * 160 + 75 + offset}px))`;
+    }, 100);
+
+    setTimeout(() => {
+        inventory.push(winningItem.id);
+        if (!ownedSkins.includes(winningItem.id)) ownedSkins.push(winningItem.id);
+        saveGame();
+        alert(`🎉 UNLOCKED: ${winningItem.name} (${winningItem.rarity})!`);
+        overlay.classList.add('hidden');
+    }, 4500);
+}
+
+function renderInventory() {
+    const list = document.getElementById('inventory-list');
+    const search = document.getElementById('inv-search').value.toLowerCase();
+    
+    // Group duplicates
+    const counts = {};
+    inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
+    
+    const EMOJI_MAP = { player_unicorn: '🦄', player_alien: '👽', player_skull: '💀', player_crown: '👑', player_ghost: '👻', player_trident: '🔱', player_lightning: '⚡', player_diamond: '💎', player_vortex: '🌀', bullet_inferno: '🔥', bullet_void: '🕳️', bullet_plasma: '⚡', bullet_divine: '✨' };
+    const allSkins = [...COSMETICS.player, ...COSMETICS.bullet];
+    list.innerHTML = allSkins.filter(s => inventory.includes(s.id) && s.name.toLowerCase().includes(search)).map(item => {
+        const count = counts[item.id];
+        const isEquipped = (equippedPlayerSkin === item.id || equippedBulletSkin === item.id);
+        
+        let previewHTML;
+        if (EMOJI_MAP[item.id]) {
+            previewHTML = `<div style="font-size:32px;">${EMOJI_MAP[item.id]}</div>`;
+        } else if (item.id.includes('bullet')) {
+            const bColor = item.color === 'rainbow' ? 'linear-gradient(to bottom, red, orange, yellow, green, cyan, blue, purple)' : item.color;
+            previewHTML = `<div style="width:6px;height:24px;background:${bColor};box-shadow:0 0 10px ${item.color === 'rainbow' ? '#fff' : item.color};border-radius:2px;"></div>`;
+        } else {
+            const triColor = item.color || '#00f3ff';
+            const triGlow = item.glow || triColor;
+            previewHTML = `<svg width="36" height="36" viewBox="0 0 45 45"><polygon points="22.5,5 40,40 5,40" fill="${triColor}" style="filter:drop-shadow(0 0 6px ${triGlow})"/>${item.borderColor ? `<polygon points="22.5,5 40,40 5,40" fill="none" stroke="${item.borderColor}" stroke-width="2"/>` : ''}</svg>`;
+        }
+        
+        return `
+            <div onclick="handleInventoryClick('${item.id}')" style="width:100px;height:100px;background:${item.rarity === 'OWNER' ? (isEquipped ? 'rgba(255,0,0,0.15)' : '#1a0000') : (isEquipped ? 'rgba(0,243,255,0.15)' : '#1a1a2e')};border:2px solid ${item.rarity === 'OWNER' ? '#ff0000' : (isEquipped ? '#00f3ff' : RARITY[item.rarity].color)};border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative;cursor:pointer;flex-shrink:0;">
+                <div style="position:absolute;top:4px;right:6px;color:#fff;font-weight:900;font-size:10px;background:rgba(0,0,0,0.5);padding:1px 5px;border-radius:6px;">x${count}</div>
+                ${previewHTML}
+                <div style="color:#fff;font-size:9px;font-weight:bold;text-align:center;line-height:1.1;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
+                <div style="color:${RARITY[item.rarity].color};font-size:8px;font-weight:900;">${item.rarity}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function handleInventoryClick(id) {
+    if (id.startsWith('player')) equippedPlayerSkin = id;
+    else equippedBulletSkin = id;
+    playSound('buy');
+    saveGame();
+    renderInventory();
+}
+
+function openTradeHub() {
+    const list = document.getElementById('trade-player-list');
+    list.innerHTML = `<div style="text-align:center; padding: 20px; color:#a0a0b0;">Fetching active traders...</div>`;
+    
+    // Fetch real players from the leaderboard
+    fetch('https://neon-server-crhx.onrender.com/api/leaderboard')
+        .then(res => res.json())
+        .then(lb => {
+            // Remove the [TAG] and get unique names
+            let traders = [...new Set(lb.map(entry => entry.user.split(' ').slice(1).join(' ')))];
+            // Don't trade with yourself
+            traders = traders.filter(t => t !== currentUser && t.length > 0);
+            
+            if (traders.length === 0) {
+                list.innerHTML = `<div style="text-align:center; padding: 20px; color:#ff007a;">No other players found. Try again later!</div>`;
+                return;
+            }
+
+            list.innerHTML = traders.map(name => `
+                <div class="lb-item" style="border-color:rgba(0,255,122,0.3);">
+                    <div class="lb-name">${name}</div>
+                    <button onclick="startTrade('${name}')" style="width:auto; padding:8px 15px; font-size:12px; background:#00ff7a; color:#000;">TRADE</button>
+                </div>
+            `).join('');
+        })
+        .catch(err => {
+            list.innerHTML = `<div style="text-align:center; padding: 20px; color:#ff007a;">Offline: Using Local Traders</div>`;
+            const localTraders = ["NeonKing", "ShadowStrike", "VoidMaster"];
+            list.innerHTML += localTraders.map(name => `
+                <div class="lb-item" style="border-color:rgba(0,255,122,0.3);">
+                    <div class="lb-name">${name}</div>
+                    <button onclick="startTrade('${name}')" style="width:auto; padding:8px 15px; font-size:12px; background:#00ff7a; color:#000;">TRADE</button>
+                </div>
+            `).join('');
+        });
+}
+
+async function startTrade(name) {
+    tradeTargetName = name;
+    tradeOfferYourItems = [];
+    tradeOfferTheirItems = [];
+    tradeLocked = false;
+    
+    document.getElementById('trade-target-name').innerText = name.toUpperCase();
+    document.getElementById('trade-modal').classList.remove('hidden');
+    renderValueChart('trade-modal-value-chart');
+    
+    // Create room on server
+    const res = await fetch(`${SERVER_URL}/api/create_trade`, {
+        method: 'POST',
+        body: JSON.stringify({ from: currentUser, to: name })
+    });
+    const data = await res.json();
+    currentTradeRoom = data.room_id;
+    
+    updateTradeUI();
+}
+
+function updateTradeUI() {
+    const yourEl = document.getElementById('trade-your-offer');
+    const theirEl = document.getElementById('trade-their-offer');
+    
+    const renderOffer = (items, isYours) => {
+        const counts = {};
+        items.forEach(id => counts[id] = (counts[id] || 0) + 1);
+        const unique = [...new Set(items)];
+        
+        return unique.map(id => {
+            const item = [...COSMETICS.player, ...COSMETICS.bullet].find(s => s.id === id);
+            if (!item) return '';
+            const rarityColor = RARITY[item.rarity] ? RARITY[item.rarity].color : '#fff';
+            const countStr = counts[id] > 1 ? ` <span style="color:#ffd700; font-weight:900;">x${counts[id]}</span>` : '';
+            const icon = id.includes('bullet') ? '☄️' : '🛸';
+            
+            const removeBtn = isYours ? `<span onclick="removeFromOffer('${id}')" style="color:#ff007a; cursor:pointer; font-weight:900; margin-left:8px;">✖</span>` : '';
+            
+            return `<div style="background:#2a2a45; border-radius:8px; padding:6px 10px; border:1px solid ${rarityColor}; font-size:11px; color:#fff; display:flex; align-items:center; gap:6px;">
+                <span style="color:${item.color}; font-size:14px;">${icon}</span>
+                <span>${item.name}${countStr}</span>
+                ${removeBtn}
+            </div>`;
+        }).join('');
+    };
+    
+    yourEl.innerHTML = renderOffer(tradeOfferYourItems, true);
+    theirEl.innerHTML = renderOffer(tradeOfferTheirItems, false);
+}
+
+function removeFromOffer(id) {
+    if (tradeLocked) return alert("Unlock your offer to change items!");
+    const idx = tradeOfferYourItems.indexOf(id);
+    if (idx > -1) {
+        tradeOfferYourItems.splice(idx, 1);
+        updateTradeUI();
+        syncLiveTrade();
+    }
+}
+
+
+function pickTradeItem(isYours) {
+    if (tradeLocked) return alert("Unlock your offer to change items!");
+    const modal = document.getElementById('item-select-modal');
+    const list = document.getElementById('item-select-list');
+    modal.classList.remove('hidden');
+    
+    if (isYours) {
+        const counts = {};
+        inventory.forEach(id => counts[id] = (counts[id] || 0) + 1);
+        const uniqueItems = [...new Set(inventory)];
+        list.innerHTML = uniqueItems.map(id => {
+            const item = [...COSMETICS.player, ...COSMETICS.bullet].find(s => s.id === id);
+            if (!item) return '';
+            const rarityColor = RARITY[item.rarity] ? RARITY[item.rarity].color : '#fff';
+            const icon = id.includes('bullet') ? '☄️' : '🛸';
+            return `<div onclick="addToOffer('${id}', true)" style="background:#2a2a45; border-radius:10px; padding:10px; border:2px solid ${rarityColor}; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <div style="color:${item.color}; font-size:24px;">${icon}</div>
+                <div style="font-size:12px; color:#fff; text-align:center; font-weight:bold;">${item.name}</div>
+                <div style="font-size:10px; color:#ffd700;">Owned: ${counts[id]}</div>
+            </div>`;
+        }).join('');
+    } else {
+        const allSkins = [...COSMETICS.player, ...COSMETICS.bullet];
+        list.innerHTML = allSkins.map(item => {
+            const rarityColor = RARITY[item.rarity] ? RARITY[item.rarity].color : '#fff';
+            const icon = item.id.includes('bullet') ? '☄️' : '🛸';
+            return `<div onclick="addToOffer('${item.id}', false)" style="background:#2a2a45; border-radius:10px; padding:10px; border:2px solid ${rarityColor}; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <div style="color:${item.color}; font-size:24px;">${icon}</div>
+                <div style="font-size:12px; color:#fff; text-align:center; font-weight:bold;">${item.name}</div>
+            </div>`;
+        }).join('');
+    }
+}
+
+function addToOffer(id, isYours) {
+    if (tradeLocked) return alert("Unlock your offer to change items!");
+    if (isYours) tradeOfferYourItems.push(id);
+    else return alert("Live Trading: They must add their own items!");
+    
+    document.getElementById('item-select-modal').classList.add('hidden');
+    updateTradeUI();
+    syncLiveTrade(); // Send to server immediately
+}
+
+async function toggleLockOffer() {
+    tradeLocked = !tradeLocked;
+    const btn = document.getElementById('btn-lock-trade');
+    btn.innerText = tradeLocked ? "🔓 UNLOCK OFFER" : "🔒 LOCK OFFER";
+    btn.style.background = tradeLocked ? "#ffaa00" : "#00ff7a";
+    
+    await syncLiveTrade();
+}
+
+async function sendTradeProposal() {
+    if (tradeOfferYourItems.length === 0 || tradeOfferTheirItems.length === 0) return alert("Offer must include items on both sides!");
+    
+    // Ownership Check
+    const tempInv = [...inventory];
+    for (let id of tradeOfferYourItems) {
+        const idx = tempInv.indexOf(id);
+        if (idx === -1) return alert("Error: You no longer have one of the items in your offer!");
+        tempInv.splice(idx, 1);
+    }
+
+    // Remove from inventory IMMEDIATELY (Escrow)
+    tradeOfferYourItems.forEach(id => {
+        const idx = inventory.indexOf(id);
+        if (idx > -1) inventory.splice(idx, 1);
+    });
+    saveGame();
+
+    // Send to Server
+    try {
+        const res = await fetch(`${SERVER_URL}/api/send_trade`, {
+            method: 'POST',
+            body: JSON.stringify({
+                from: currentUser,
+                to: tradeTargetName,
+                offer: tradeOfferYourItems,    // What you are giving
+                request: tradeOfferTheirItems  // What you want
+            })
+        });
+        const result = await res.json();
+        alert(`🤝 Trade proposal sent to ${tradeTargetName}! Your items are in escrow.`);
+    } catch (e) {
+        // Fallback: Refund if server fails
+        tradeOfferYourItems.forEach(id => inventory.push(id));
+        saveGame();
+        alert("Server error. Items refunded to inventory.");
+    }
+    
+    document.getElementById('trade-modal').classList.add('hidden');
+    renderInventory();
+}
+
+
+
+
+safeListen('btn-hub-crates', 'click', () => { hubScreen.classList.add('hidden'); document.getElementById('crate-screen').classList.remove('hidden'); });
+safeListen('btn-close-crates', 'click', () => { document.getElementById('crate-screen').classList.add('hidden'); hubScreen.classList.remove('hidden'); });
+safeListen('btn-open-crate', 'click', () => openCrate('normal'));
+
+safeListen('btn-hub-inventory', 'click', () => { hubScreen.classList.add('hidden'); document.getElementById('inventory-screen').classList.remove('hidden'); renderInventory(); });
+safeListen('btn-close-inventory', 'click', () => { document.getElementById('inventory-screen').classList.add('hidden'); hubScreen.classList.remove('hidden'); });
+safeListen('inv-search', 'input', renderInventory);
+
+function switchTradeTab(activeTab) {
+    const tabs = ['browse', 'requests', 'values'];
+    tabs.forEach(t => {
+        const view = document.getElementById('view-trade-' + t);
+        const btn = document.getElementById('tab-trade-' + t);
+        if (view && btn) {
+            if (t === activeTab) {
+                view.classList.remove('hidden');
+                btn.style.background = '#00ff7a';
+                btn.style.color = '#000';
+            } else {
+                view.classList.add('hidden');
+                btn.style.background = 'transparent';
+                btn.style.color = '#fff';
+            }
+        }
+    });
+    if (activeTab === 'values') renderValueChart();
+}
+
+safeListen('tab-trade-browse', 'click', () => switchTradeTab('browse'));
+safeListen('tab-trade-requests', 'click', () => switchTradeTab('requests'));
+safeListen('tab-trade-values', 'click', () => switchTradeTab('values'));
+
+function renderValueChart(targetId) {
+    const allItems = [...COSMETICS.player, ...COSMETICS.bullet];
+    const rarityOrder = { OWNER: 5, LEGENDARY: 4, EPIC: 3, RARE: 2, COMMON: 1 };
+    const sorted = allItems.slice().sort((a, b) => {
+        const rDiff = (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0);
+        if (rDiff !== 0) return rDiff;
+        return (b.price === Infinity ? 999999999 : b.price) - (a.price === Infinity ? 999999999 : a.price);
+    });
+    const EMOJI_MAP = { player_unicorn: '\u{1F984}', player_alien: '\u{1F47D}', player_skull: '\u{1F480}', player_crown: '\u{1F451}', player_ghost: '\u{1F47B}', player_trident: '\u{1F531}', player_lightning: '\u26A1', player_diamond: '\u{1F48E}', player_vortex: '\u{1F300}', bullet_inferno: '\u{1F525}', bullet_void: '\u{1F573}\uFE0F', bullet_plasma: '\u26A1', bullet_divine: '\u2728' };
+    
+    const html = sorted.map(item => {
+        const rarityColor = RARITY[item.rarity] ? RARITY[item.rarity].color : '#fff';
+        const icon = EMOJI_MAP[item.id] || (item.id.includes('bullet') ? '\u2604\uFE0F' : '\u{1F6F8}');
+        const typeTag = item.id.includes('bullet') ? 'BULLET' : 'PLAYER';
+        const isCompact = !!targetId && targetId === 'trade-modal-value-chart';
+        
+        if (isCompact) {
+            return `<div style="display:flex; align-items:center; gap:6px; padding:4px 6px; background:rgba(255,255,255,0.03); border-radius:6px; border-left:3px solid ${rarityColor};">
+                <span style="font-size:12px;">${icon}</span>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-size:9px; color:#fff; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
+                    <div style="font-size:8px; color:${rarityColor}; font-weight:900;">${item.rarity}</div>
+                </div>
+                <div style="font-size:8px; color:#ffd700; font-weight:900; white-space:nowrap;">${item.price === Infinity ? '∞' : '$' + formatNumber(item.price)}</div>
+            </div>`;
+        }
+        
+        return `<div style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:${item.rarity === 'OWNER' ? 'rgba(255,0,0,0.08)' : 'rgba(255,255,255,0.03)'}; border-radius:10px; border:1px solid ${rarityColor}30;">
+            <span style="font-size:20px;">${icon}</span>
+            <div style="flex:1; min-width:0;">
+                <div style="font-size:12px; color:#fff; font-weight:bold;">${item.name}</div>
+                <div style="font-size:10px; color:${rarityColor}; font-weight:900;">${item.rarity} <span style="color:#505070; font-weight:400;">${typeTag}</span></div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:12px; color:#ffd700; font-weight:900;">${item.price === Infinity ? '∞' : '$' + formatNumber(item.price)}</div>
+                <div style="font-size:9px; color:#a0a0b0;">VALUE: ${RARITY[item.rarity] ? RARITY[item.rarity].value : '?'}</div>
+            </div>
+        </div>`;
+    }).join('');
+    
+    if (targetId) {
+        const el = document.getElementById(targetId);
+        if (el) el.innerHTML = html;
+    } else {
+        const chart = document.getElementById('trade-value-chart');
+        if (chart) chart.innerHTML = html;
+        const sidebar = document.getElementById('trade-modal-value-chart');
+        if (sidebar) sidebar.innerHTML = renderValueChart('trade-modal-value-chart') || '';
+    }
+    return html;
+}
+
+safeListen('btn-cancel-trade', 'click', () => {
+    document.getElementById('trade-modal').classList.add('hidden');
+    currentTradeRoom = null;
 });
 
+safeListen('btn-hub-trade', 'click', () => { hubScreen.classList.add('hidden'); document.getElementById('trade-screen').classList.remove('hidden'); openTradeHub(); switchTradeTab('browse'); });
+safeListen('btn-close-trade', 'click', () => { document.getElementById('trade-screen').classList.add('hidden'); hubScreen.classList.remove('hidden'); });
+safeListen('btn-search-player', 'click', () => {
+    const val = document.getElementById('trade-user-search').value;
+    if (val) startTrade(val);
+});
+
+safeListen('btn-lock-trade', 'click', toggleLockOffer);
+safeListen('btn-send-trade', 'click', () => {
+    if (document.getElementById('btn-send-trade').classList.contains('disabled')) return;
+    sendTradeProposal();
+});
+
+safeListen('btn-add-your-item', 'click', () => pickTradeItem(true));
+safeListen('btn-add-their-item', 'click', () => pickTradeItem(false));
+safeListen('btn-close-item-select', 'click', () => document.getElementById('item-select-modal').classList.add('hidden'));
+
+safeListen('btn-hub-achievements', 'click', () => { hubScreen.classList.add('hidden'); document.getElementById('achievements-screen').classList.remove('hidden'); renderAchievements(); });
+safeListen('btn-close-achievements', 'click', () => { document.getElementById('achievements-screen').classList.add('hidden'); hubScreen.classList.remove('hidden'); });
+
 // --- LOADING LOGIC ---
-window.addEventListener('load', () => {
-    const fill = document.getElementById('loader-bar-fill');
-    const screen = document.getElementById('loading-screen');
-    let p = 0;
-    const interval = setInterval(() => {
-        p += Math.random() * 15;
-        if (p >= 100) {
-            p = 100;
-            clearInterval(interval);
-            setTimeout(() => {
-                screen.style.opacity = '0';
-                setTimeout(() => screen.classList.add('hidden'), 800);
-            }, 500);
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        initDOMElements();
+        initSettings();
+        attachUpgradeListeners();
+        
+        const fill = document.getElementById('loader-bar-fill');
+        const screen = document.getElementById('loading-screen');
+        if (!fill || !screen) {
+            console.error("Critical: Loader elements missing");
+            return;
         }
-        fill.style.width = p + '%';
-    }, 100);
+        
+        let p = 0;
+        const interval = setInterval(() => {
+            try {
+                p += Math.random() * 15;
+                if (p >= 100) {
+                    p = 100;
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        screen.style.opacity = '0';
+                        setTimeout(() => screen.classList.add('hidden'), 800);
+                        // Emergency check: if game is still not showing, force it
+                        setTimeout(() => {
+                            if (gameState === 'LOGIN' && loginScreen) {
+                                loginScreen.classList.remove('hidden');
+                            }
+                        }, 1000);
+                    }, 500);
+                }
+                fill.style.width = p + '%';
+            } catch (e) {
+                console.error("Loader Interval Error:", e);
+                clearInterval(interval);
+                if (screen) screen.classList.add('hidden');
+            }
+        }, 100);
+    } catch (e) {
+        console.error("Global Initialization Error:", e);
+        const screen = document.getElementById('loading-screen');
+        if (screen) screen.classList.add('hidden');
+    }
 });
 
