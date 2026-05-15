@@ -22,12 +22,13 @@ jobs:
           npm install @capacitor/ios
           npx cap add ios || echo "iOS already added"
           
-      - name: Generate App Icons
+      - name: Generate App Icons & Splash Screen
         run: |
           npm install @capacitor/assets
           mkdir -p assets
           cp icon.png assets/icon-only.png
-          cp icon.png assets/splash-only.png
+          cp src/assets/imgs/logo.png assets/splash.png
+          cp src/assets/imgs/logo.png assets/splash-dark.png
           npx capacitor-assets generate --ios
           
       - name: Sync iOS
