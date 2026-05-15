@@ -1,0 +1,9 @@
+{
+  "name": "Territory.io",
+  "short_name": "Territory",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0f0f16",
+  "theme_color": "#0f0f16",
+  "icons": []
+}

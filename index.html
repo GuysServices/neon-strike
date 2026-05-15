@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Neon Gun Tycoon</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f0f16">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="bgCanvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;"></canvas>
+    <div id="game-container" style="position: relative; z-index: 1;">
+        
+        <!-- LOGIN SCREEN -->
+        <div id="login-screen" class="screen">
+            <div class="login-box">
+                <h1>NEON GUN TYCOON</h1>
+                <input type="text" id="username" placeholder="Username" maxlength="16">
+                <input type="password" id="password" placeholder="Password">
+                <button id="btn-login">LOGIN / PLAY</button>
+                <p id="login-error" style="color: red; margin-top: 10px; display: none;">Invalid credentials</p>
+            </div>
+        </div>
+        
+        <!-- LEADERBOARD SCREEN -->
+        <div id="leaderboard-screen" class="screen hidden" style="background: rgba(15, 15, 22, 0.85);">
+            <div class="menu-header">
+                <div><span id="menu-wave-text" style="color:#00f3ff;">TOP 100 PLAYERS</span></div>
+                <button id="btn-close-lb" style="width: auto; padding: 10px 20px; font-size: 16px;">BACK</button>
+            </div>
+            <div style="display: flex; gap: 10px; padding: 0 20px; margin-bottom: 10px; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <button id="btn-lb-waves" style="flex: 1; padding: 10px; font-size: 14px; background: #00f3ff; color: #000; font-weight: bold; box-shadow: 0 0 10px rgba(0,243,255,0.5);">🌊 WAVES</button>
+                <button id="btn-lb-prestiges" style="flex: 1; padding: 10px; font-size: 14px; background: #2a2a45; color: #fff; font-weight: bold; box-shadow: none;">⭐ PRESTIGES</button>
+            </div>
+            <div class="lb-list" id="lb-list">
+                <!-- Leaderboard items injected here -->
+            </div>
+        </div>
+        
+        <!-- HUB SCREEN (MAIN MENU) -->
+        <div id="hub-screen" class="screen hidden" style="background: rgba(15, 15, 22, 0.85); justify-content: center; align-items: center; z-index: 20;">
+            <div style="text-align: center; width: 90%; max-width: 400px;">
+                <h1 id="game-title" style="color: #00f3ff; font-weight: 900; font-size: 40px; margin-bottom: 5px;">NEON GUN TYCOON</h1>
+                <div id="hub-prestige-text" class="hidden" style="color: #ffd700; font-size: 16px; font-weight: 800; margin-bottom: 25px; text-shadow: 0 0 10px rgba(255, 215, 0, 0.5); letter-spacing: 1px;">⭐ PRESTIGE 1 (2.0x MULTIPLIER)</div>
+                <div id="hub-wave-text" style="color: #fff; font-size: 24px; font-weight: 700; margin-bottom: 5px;">WAVE 1</div>
+                <div id="hub-money" style="color: #00f3ff; font-size: 32px; font-weight: 900; margin-bottom: 40px; text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);">$0</div>
+                
+                <button id="btn-hub-play" style="margin-bottom: 20px; font-size: 28px; padding: 25px;">▶ PLAY WAVE 1</button>
+                <button id="btn-hub-upgrades" style="margin-bottom: 20px; background: #2a2a45; box-shadow: none;">🛠️ UPGRADES</button>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-settings" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">⚙️ SETTINGS</button>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-crates" style="flex: 1; padding: 15px 10px; background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 0 10px rgba(255,215,0,0.3); font-size: 14px; font-weight: 900;">📦 CRATES</button>
+                    <button id="btn-hub-inventory" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🎒 INVENTORY</button>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-trade" style="flex: 1; padding: 15px 10px; background: #00ff7a; color: #000; box-shadow: 0 0 10px rgba(0,255,122,0.3); font-size: 14px; font-weight: 900; position:relative;">
+                        🤝 TRADE
+                        <div id="trade-notify-badge" class="hidden" style="position:absolute; top:-5px; right:-5px; background:#ff007a; color:#fff; width:20px; height:20px; border-radius:50%; font-size:12px; display:flex; align-items:center; justify-content:center; border:2px solid #000; font-weight:900;">!</div>
+                    </button>
+                    <button id="btn-hub-skins" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🎨 SHOP</button>
+                </div>
+                
+        <!-- TRADE MODAL -->
+        <div id="trade-modal" class="screen hidden" style="background:rgba(0,0,0,0.9); z-index:1000; justify-content:center; align-items:center;">
+            <div style="background:#1a1a2e; width:95%; max-width:450px; padding:30px; border-radius:30px; border:2px solid #00ff7a;">
+                <h2 style="text-align:center; color:#00ff7a; margin-bottom:20px;">LIVE TRADE: <span id="trade-target-name">PLAYER</span></h2>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
+                    <div style="text-align:center;">
+                        <div style="font-size:12px; color:#a0a0b0; margin-bottom:5px;">YOUR OFFER</div>
+                        <div id="trade-your-status" style="font-size:10px; font-weight:900; margin-bottom:5px; color:#ffaa00;">⏳ EDITING...</div>
+                        <div id="trade-your-offer" style="min-height:100px; background:rgba(0,0,0,0.3); border-radius:10px; padding:10px; display:flex; flex-wrap:wrap; gap:5px; align-content:flex-start;"></div>
+                        <button id="btn-add-your-item" style="margin-top:10px; padding:10px; font-size:12px; width:100%;">+ ADD ITEM</button>
+                    </div>
+                    <div style="text-align:center;">
+                        <div style="font-size:12px; color:#a0a0b0; margin-bottom:5px;">THEIR OFFER</div>
+                        <div id="trade-their-status" style="font-size:10px; font-weight:900; margin-bottom:5px; color:#ffaa00;">⏳ WAITING...</div>
+                        <div id="trade-their-offer" style="min-height:100px; background:rgba(0,0,0,0.3); border-radius:10px; padding:10px; display:flex; flex-wrap:wrap; gap:5px; align-content:flex-start;"></div>
+                        <div style="height:35px; margin-top:10px; display:flex; align-items:center; justify-content:center; color:#505070; font-size:10px; border:1px dashed #505070; border-radius:10px;">THEY ADD ITEMS</div>
+                    </div>
+                </div>
+
+                <button id="btn-lock-trade" style="width:100%; margin-bottom:15px; background:#00ff7a; color:#000; font-weight:900;">🔒 LOCK OFFER</button>
+                
+                <div style="display:flex; gap:10px;">
+                    <button id="btn-send-trade" class="disabled" style="flex:2; background:#505070; color:#fff; opacity:0.5;">COMPLETE TRADE</button>
+                    <button id="btn-cancel-trade" style="flex:1; background:#333; color:#fff;">CANCEL</button>
+                </div>
+                <div id="trade-status-msg" style="text-align:center; font-size:10px; color:#ff007a; margin-top:10px;">BOTH MUST LOCK TO FINISH</div>
+            </div>
+        </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-achievements" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🎖️ MILESTONES</button>
+                    <button id="btn-hub-lb" style="flex: 1; padding: 15px 10px; background: #2a2a45; box-shadow: none; font-size: 14px;">🏆 RANKINGS</button>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 20px; width: 100%;">
+                    <button id="btn-hub-daily" style="flex: 1; padding: 15px 10px; background: linear-gradient(135deg, #1a0030, #0a0020); color: #aa00ff; border: 1px solid #aa00ff; box-shadow: 0 0 10px rgba(170,0,255,0.3); font-size: 14px;">⚡ DAILY</button>
+                    <button id="btn-difficulty" style="flex: 1; padding: 15px 10px; background: #00f3ff; color: #000; box-shadow: 0 0 15px rgba(0, 243, 255, 0.5); font-size: 14px;">MODE: EASY</button>
+                </div>
+                <button id="btn-wipe-save" style="margin-bottom: 20px; background: transparent; color: #ff0000; border: 1px solid #ff0000; padding: 10px; font-size: 14px; box-shadow: none; width: 100%;">⚠️ RESET ALL SAVES</button>
+                <button id="btn-owner-panel" class="hidden" style="background: linear-gradient(135deg, #ff0000, #ff007a); color: #fff; font-weight: 900; box-shadow: 0 0 20px rgba(255, 0, 122, 0.8);">👑 OWNER PANEL</button>
+            </div>
+        </div>
+        
+        <!-- UPGRADES SCREEN -->
+        <div id="menu-screen" class="screen hidden" style="background: rgba(15, 15, 22, 0.85);">
+            <div class="menu-header">
+                <div><span id="menu-wave-text" style="color: #fff;">UPGRADES</span></div>
+                <div id="menu-money">$0</div>
+            </div>
+            
+            <div id="upgrade-panel">
+                <div class="upgrade-btn" id="btn-damage">
+                    <div class="upg-info">
+                        <span class="upg-name">DAMAGE</span>
+                        <span class="upg-level" id="lvl-damage">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-damage">$10</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-firerate">
+                    <div class="upg-info">
+                        <span class="upg-name">FIRE RATE</span>
+                        <span class="upg-level" id="lvl-firerate">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-firerate">$15</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-income">
+                    <div class="upg-info">
+                        <span class="upg-name">INCOME</span>
+                        <span class="upg-level" id="lvl-income">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-income">$25</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-multishot">
+                    <div class="upg-info">
+                        <span class="upg-name">MULTI-SHOT</span>
+                        <span class="upg-level" id="lvl-multishot">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-multishot">$250</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-spawn">
+                    <div class="upg-info">
+                        <span class="upg-name">SPAWN RATE</span>
+                        <span class="upg-level" id="lvl-spawn">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-spawn">$50</div>
+                </div>
+                
+                <div class="upgrade-btn" id="btn-pierce">
+                    <div class="upg-info">
+                        <span class="upg-name" style="color: #ff007a;">PIERCE (OP)</span>
+                        <span class="upg-level" id="lvl-pierce">Lv 1</span>
+                    </div>
+                    <div class="upg-cost" id="cost-pierce" style="background: #ff007a; color: white; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">$2.5M</div>
+                </div>
+            </div>
+            
+            <div class="menu-footer" style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="btn-prestige" class="hidden" style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 10px 30px rgba(255, 215, 0, 0.4); font-size: 20px; padding: 15px;">⭐ PRESTIGE (REQ: WAVE 100)</button>
+                <button id="btn-back-hub" style="padding: 15px; background: #ff007a; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">BACK TO MENU</button>
+            </div>
+        </div>
+
+        <!-- GAME SCREEN -->
+        <div id="game-screen" class="screen hidden">
+            <canvas id="gameCanvas"></canvas>
+            
+            <div class="hud" id="hud-money">$0</div>
+            <div class="hud" id="hud-progress">0 / 10</div>
+            <div class="hud" id="hud-lives">❤️❤️❤️</div>
+            <div class="hud" id="hud-shield" style="bottom: calc(env(safe-area-inset-bottom, 20px) + 50px); right: 20px; background: rgba(0,100,255,0.3); border: 1px solid #00f3ff; display: none; font-size: 18px;">🛡️ SHIELD</div>
+            <div id="kill-feed" style="position: absolute; top: calc(env(safe-area-inset-top, 20px) + 70px); left: 20px; display: flex; flex-direction: column; gap: 5px; z-index: 5; pointer-events: none;"></div>
+            <div id="btn-pause" class="hud" style="top: calc(env(safe-area-inset-top, 20px) + 20px); left: 50%; transform: translateX(-50%); cursor: pointer; border: 1px solid rgba(255,255,255,0.3); padding: 5px 15px; background: rgba(0,0,0,0.5); z-index: 10; pointer-events: auto;">⏸️ PAUSE</div>
+            <div id="powerup-timers" style="position: absolute; top: calc(env(safe-area-inset-top, 20px) + 80px); right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 5; pointer-events: none; align-items: flex-end;"></div>
+            <div id="tap-hint">Drag to move & shoot!</div>
+            
+            <div id="overlay" class="hidden panel">
+                <h1 id="overlay-title">WAVE CLEARED</h1>
+                <p id="overlay-desc">Returning to base...</p>
+                <div class="final-score" id="overlay-reward">Reward: $0</div>
+                <button id="btn-continue">CONTINUE</button>
+            </div>
+            
+            <div id="pause-menu" class="hidden panel" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 400px; background: rgba(20,20,30,0.95); padding: 40px; border-radius: 30px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8); border: 1px solid rgba(0,243,255,0.3); backdrop-filter: blur(10px); z-index: 100; pointer-events: auto;">
+                <h1 style="font-size: 36px; margin-bottom: 20px; color: #fff;">PAUSED</h1>
+                <button id="btn-resume">RESUME</button>
+                <button id="btn-quit" style="background: #ff007a; margin-top: 15px; box-shadow: 0 0 15px rgba(255, 0, 122, 0.5);">QUIT TO MENU</button>
+            </div>
+        </div>
+
+        <!-- WAVE PREVIEW SCREEN -->
+        <div id="wave-preview" class="screen hidden" style="background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 50;">
+            <div style="text-align: center; animation: wavePreviewPulse 0.5s ease-in-out;">
+                <div id="wp-label" style="color: #a0a0b0; font-size: 18px; font-weight: 700; letter-spacing: 4px; margin-bottom: 10px;">INCOMING</div>
+                <div id="wp-title" style="color: #00f3ff; font-size: 64px; font-weight: 900; text-shadow: 0 0 30px rgba(0,243,255,0.8); margin-bottom: 10px;">WAVE 1</div>
+                <div id="wp-subtitle" style="color: #fff; font-size: 24px; font-weight: 700; margin-bottom: 40px;">45 Enemies</div>
+                <div id="wp-countdown" style="color: #ffd700; font-size: 48px; font-weight: 900;">3</div>
+            </div>
+        </div>
+
+        <!-- BLACK MARKET SCREEN -->
+        <div id="blackmarket-screen" class="screen hidden" style="background: rgba(5,0,15,0.95); justify-content: center; align-items: center; z-index: 50;">
+            <div style="width: 90%; max-width: 420px; text-align: center;">
+                <h2 style="color: #aa00ff; font-size: 32px; font-weight: 900; text-shadow: 0 0 20px rgba(170,0,255,0.8); margin-bottom: 5px;">🕵️ BLACK MARKET</h2>
+                <p style="color: #a0a0b0; margin-bottom: 25px; font-size: 14px;">ONE-TIME DEALS — GONE AFTER THIS WAVE</p>
+                <div id="bm-deals" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px;"></div>
+                <div style="color: #fff; font-size: 18px; font-weight: 700; margin-bottom: 15px;">Your Balance: <span id="bm-money" style="color: #00f3ff;">$0</span></div>
+                <button id="btn-bm-skip" style="background: #1a0030; color: #aa00ff; border: 1px solid #aa00ff; box-shadow: 0 0 15px rgba(170,0,255,0.4); width: 100%;">SKIP →</button>
+            </div>
+        </div>
+
+        <!-- ACHIEVEMENT POPUP -->
+        <div id="achievement-popup" style="position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: rgba(20,20,40,0.97); border: 2px solid #ffd700; border-radius: 15px; padding: 15px 25px; display: none; align-items: center; gap: 15px; z-index: 500; box-shadow: 0 0 30px rgba(255,215,0,0.5); min-width: 280px; pointer-events: none;">
+            <div style="font-size: 36px;" id="ach-icon">🏆</div>
+            <div>
+                <div style="color: #ffd700; font-weight: 900; font-size: 12px; letter-spacing: 2px;">ACHIEVEMENT UNLOCKED</div>
+                <div id="ach-name" style="color: #fff; font-weight: 900; font-size: 16px;">First Blood</div>
+                <div id="ach-desc" style="color: #a0a0b0; font-size: 12px;">Kill your first enemy</div>
+            </div>
+        </div>
+
+        <!-- IDLE EARNINGS POPUP -->
+        <div id="idle-popup" class="hidden screen" style="z-index: 200; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; pointer-events: auto;">
+            <div style="width: 90%; max-width: 400px; background: rgba(20,20,30,0.95); padding: 40px; border-radius: 30px; text-align: center; border: 2px solid #ffaa00; box-shadow: 0 0 50px rgba(255,170,0,0.4);">
+                <h1 style="color: #ffaa00; margin-bottom: 10px;">WELCOME BACK!</h1>
+                <p style="color: #a0a0b0; font-size: 18px;">Your base mined money while you were offline:</p>
+                <div id="idle-amount" style="font-size: 36px; color: #00f3ff; font-weight: 900; margin: 25px 0;">+$0</div>
+                <button id="btn-collect-idle" style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 10px 30px rgba(255, 215, 0, 0.4);">COLLECT</button>
+            </div>
+        </div>
+        
+        <!-- SETTINGS SCREEN -->
+        <div id="settings-screen" class="screen hidden">
+            <div id="settings-panel" style="background: rgba(10, 10, 25, 0.95); padding: 40px; border-radius: 20px; text-align: center; border: 2px solid #00f3ff; box-shadow: 0 0 20px rgba(0, 243, 255, 0.3); width: 90%; max-width: 400px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+                <h2 id="settings-title" style="color: #00f3ff; margin-bottom: 20px; font-size: 32px;">⚙️ SETTINGS</h2>
+                
+                <div style="margin-bottom: 30px; color: #fff; width: 100%; background: #1a1a2e; padding: 15px; border-radius: 10px;">
+                    <div style="font-size: 14px; opacity: 0.8;">ACCOUNT UID</div>
+                    <div id="settings-uid" style="font-family: monospace; color: #ff007a; font-size: 28px; font-weight: bold; margin-top: 5px; letter-spacing: 2px;">---</div>
+                </div>
+                
+                <div style="margin-bottom: 40px; width: 100%;">
+                    <div style="color: #fff; margin-bottom: 15px; font-weight: bold;">SOUND VOLUME (<span id="vol-value">100</span>%)</div>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" style="width: 100%; accent-color: #00f3ff; height: 8px;">
+                </div>
+                
+                <button id="btn-close-settings" style="width: 100%; background: #00f3ff; color: #000; padding: 15px; border-radius: 10px; font-weight: 900; font-size: 18px; box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);">CLOSE</button>
+            </div>
+        </div>
+
+        <!-- OWNER PANEL SCREEN -->
+        <div id="owner-screen" class="screen hidden">
+            <div style="background: rgba(15, 0, 0, 0.95); padding: 40px; border-radius: 20px; text-align: center; border: 2px solid #ff0000; box-shadow: 0 0 30px rgba(255, 0, 0, 0.5); width: 90%; max-width: 400px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+                <h2 style="color: #ff0000; margin-bottom: 20px; font-size: 32px; text-shadow: 0 0 10px #ff0000;">👑 OWNER PANEL</h2>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-bottom: 30px; max-height: 300px; overflow-y: auto; padding-right: 5px;">
+                    <button id="btn-owner-money" style="background: #2a0000; color: #00ff7a; border: 1px solid #00ff7a; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">+ $100B</button>
+                    <button id="btn-owner-wave" style="background: #2a0000; color: #ffaa00; border: 1px solid #ffaa00; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">+ 10 WAVES</button>
+                    <button id="btn-owner-buff" style="background: #2a0000; color: #00f3ff; border: 1px solid #00f3ff; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">ALL BUFFS</button>
+                    <button id="btn-owner-nuke" style="background: #300; color: #ff4400; border: 1px solid #ff4400; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">☢️ NUKE WAVE</button>
+                    <button id="btn-owner-skins" style="background: #303; color: #ff00ff; border: 1px solid #ff00ff; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">🔓 ALL SKINS</button>
+                    <button id="btn-owner-max" style="background: #033; color: #00ffff; border: 1px solid #00ffff; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">⚡ MAX ALL</button>
+                    <button id="btn-owner-god" style="background: #330; color: #ffff00; border: 1px solid #ffff00; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">😇 GOD MODE</button>
+                    <button id="btn-owner-prestige" style="background: #111; color: #ffd700; border: 1px solid #ffd700; padding: 10px; font-size: 12px; font-weight: bold; box-shadow: none;">✨ +1 PRESTIGE</button>
+                    <button id="btn-owner-crate" style="grid-column: span 2; background: linear-gradient(135deg, #ff0000, #ff8800); color: #fff; border: 2px solid #ffd700; padding: 12px; font-size: 14px; font-weight: 900; box-shadow: 0 0 20px rgba(255,0,0,0.5);">🎁 OWNER CRATE (FREE)</button>
+                </div>
+                
+                <button id="btn-close-owner" style="width: 100%; background: #ff0000; color: #fff; padding: 15px; border-radius: 10px; font-weight: 900; font-size: 18px; box-shadow: 0 0 15px rgba(255, 0, 0, 0.5); border: none;">CLOSE PANEL</button>
+            </div>
+        </div>
+
+        <!-- ACHIEVEMENTS SCREEN -->
+        <div id="achievements-screen" class="screen hidden" style="background: rgba(10,10,25,0.95);">
+            <div class="menu-header">
+                <div><span style="color:#ffd700; font-weight:900;">🎖️ ACHIEVEMENTS</span></div>
+                <button id="btn-close-achievements" style="width:auto; padding:10px 20px; font-size:16px;">BACK</button>
+            </div>
+            <div id="ach-list" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+
+        <!-- COSMETICS SCREEN -->
+        <div id="skins-screen" class="screen hidden" style="background: rgba(10,10,25,0.98);">
+            <div class="menu-header">
+                <div><span style="color:#00f3ff; font-weight:900;">🎨 COSMETIC STORE</span></div>
+                <div id="skins-money" style="color:#00f3ff; font-weight:900;">$0</div>
+            </div>
+            <div style="display: flex; background: rgba(0,0,0,0.3); padding: 10px;">
+                <button id="tab-player-skins" style="flex: 1; font-size: 14px; padding: 10px; background: #00f3ff; color: #000;">PLAYER</button>
+                <button id="tab-bullet-skins" style="flex: 1; font-size: 14px; padding: 10px; background: transparent; color: #fff; box-shadow: none;">BULLETS</button>
+            </div>
+            <div id="skins-list" class="cosmetic-grid" style="flex: 1; overflow-y: auto;"></div>
+            <div class="menu-footer">
+                <button id="btn-close-skins" style="background: #ff007a;">BACK TO MENU</button>
+            </div>
+        </div>
+
+        <!-- CRATE SCREEN -->
+        <div id="crate-screen" class="screen hidden" style="background: rgba(10,0,20,0.98);">
+            <div class="menu-header">
+                <div><span style="color:#ffd700; font-weight:900;">📦 NEON CASES</span></div>
+                <button id="btn-close-crates" style="width:auto; padding:10px 20px; background:#ffd700; color:#000;">BACK</button>
+            </div>
+            <div style="padding:20px; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; overflow-y:auto;">
+                <!-- Neon Case -->
+                <div style="background: rgba(0,0,0,0.5); padding: 30px; border-radius: 20px; text-align:center; border: 1px solid #ffd700;">
+                    <div style="width:150px; height:150px; margin:0 auto 20px; background:linear-gradient(135deg, #ffd700, #ff00ff); border-radius:30px; box-shadow:0 0 50px rgba(255,215,0,0.4); display:flex; align-items:center; justify-content:center; font-size:80px;">📦</div>
+                    <div style="color:#ffd700; font-weight:900; font-size:14px; margin-bottom:10px;">NEON CASE</div>
+                    <div style="color:#a0a0b0; font-size:11px; margin-bottom:15px;">Contains all skins. Legendaries are ultra-rare!</div>
+                    <button id="btn-open-crate" style="background:linear-gradient(135deg, #ffd700, #ff00ff); color:#000; font-size:16px; padding:15px 20px; width:100%; font-weight:900;">OPEN FOR $10M</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- INVENTORY SCREEN -->
+        <div id="inventory-screen" class="screen hidden" style="background: rgba(10,10,25,0.98);">
+            <div class="menu-header">
+                <div><span style="color:#00f3ff; font-weight:900;">🎒 INVENTORY</span></div>
+                <button id="btn-close-inventory" style="background:#ff007a; width:auto; padding:10px 20px;">BACK</button>
+            </div>
+            <div style="padding:10px; background:rgba(0,0,0,0.3); display:flex; gap:10px;">
+                <input type="text" id="inv-search" placeholder="Search collection..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; padding:10px; outline:none;">
+            </div>
+            <div id="inventory-list" style="flex:1; overflow-y:auto; padding:15px; display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; justify-content:center;"></div>
+        </div>
+
+        <!-- TRADING HUB -->
+        <div id="trade-screen" class="screen hidden" style="background: rgba(10,0,15,0.98);">
+            <div class="menu-header" style="border-bottom-color: #00ff7a;">
+                <div><span style="color:#00ff7a; font-weight:900;">🤝 TRADING HUB</span></div>
+                <button id="btn-close-trade" style="width:auto; padding:10px 20px; font-size:16px; background:#00ff7a; color:#000;">BACK</button>
+            </div>
+            
+            <div style="display: flex; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(0,255,122,0.1);">
+                <button id="tab-trade-browse" style="flex: 1; padding: 15px; background: #00ff7a; color: #000; font-size: 14px; font-weight: 900; box-shadow: none; border-radius: 0;">🌐 BROWSE</button>
+                <button id="tab-trade-requests" style="flex: 1; padding: 15px; background: transparent; color: #fff; font-size: 14px; box-shadow: none; border-radius: 0;">📩 REQUESTS</button>
+                <button id="tab-trade-values" style="flex: 1; padding: 15px; background: transparent; color: #fff; font-size: 14px; box-shadow: none; border-radius: 0;">📊 VALUES</button>
+            </div>
+
+            <div style="padding:20px; flex:1; display:flex; flex-direction:column; gap:20px; overflow:hidden; min-height:0;">
+                <!-- Browse View -->
+                <div id="view-trade-browse" style="display: flex; flex-direction: column; gap: 20px; flex: 1;">
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(0,255,122,0.2); border-radius:15px; padding:20px;">
+                        <div style="color:#00ff7a; font-weight:bold; margin-bottom:15px; font-size:14px;">FIND TRADERS</div>
+                        <div style="display:flex; gap:10px;">
+                            <input type="text" id="trade-user-search" placeholder="Enter username..." style="flex:1; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; padding:12px; outline:none;">
+                            <button id="btn-search-player" style="width:auto; padding:0 20px; font-size:16px;">SEARCH</button>
+                        </div>
+                    </div>
+                    <div style="flex:1; background:rgba(0,0,0,0.3); border-radius:15px; display:flex; flex-direction:column; overflow: hidden;">
+                        <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.05); font-weight:900; font-size:14px; color:#a0a0b0;">TOP ACTIVE TRADERS</div>
+                        <div id="trade-player-list" style="flex:1; overflow-y:auto; padding:15px; display:flex; flex-direction:column; gap:10px;">
+                            <!-- Players show up here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Requests View -->
+                <div id="view-trade-requests" class="hidden" style="flex: 1; display: flex; flex-direction: column;">
+                    <div id="trade-request-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+                        <div style="text-align:center; padding:40px; color:#505070;">No pending requests.</div>
+                    </div>
+                </div>
+
+                <!-- Value Chart View -->
+                <div id="view-trade-values" class="hidden" style="flex: 1; display: flex; flex-direction: column; min-height:0;">
+                    <div style="color:#ffd700; font-weight:900; font-size:14px; margin-bottom:10px;">📊 TRADE VALUE CHART</div>
+                    <div style="color:#a0a0b0; font-size:11px; margin-bottom:15px;">Use this as a guide for fair trades. Higher value = more rare.</div>
+                    <div id="trade-value-chart" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TRADE NEGOTIATION MODAL -->
+        <div id="trade-modal" class="screen hidden" style="background:rgba(0,0,0,0.9); z-index:1000; justify-content:center; align-items:center;">
+            <div style="width:95%; max-width:750px; background:#1a1a2e; border-radius:20px; border:2px solid #00ff7a; overflow:hidden; display:flex; flex-direction:row; max-height:90vh;">
+                <!-- Main Trade Area -->
+                <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+                    <div style="padding:15px; background:#00ff7a; color:#000; font-weight:900; display:flex; justify-content:space-between;">
+                        <span>TRADE WITH <span id="trade-target-name">PLAYER</span></span>
+                        <span id="btn-cancel-trade" style="cursor:pointer;">✕</span>
+                    </div>
+                    <div style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:20px;">
+                        <div>
+                            <div style="color:#a0a0b0; font-size:12px; font-weight:bold; margin-bottom:10px;">YOUR OFFER</div>
+                            <div id="trade-your-offer" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; min-height:80px; background:rgba(0,0,0,0.3); border-radius:10px; padding:10px;"></div>
+                            <button id="btn-add-your-item" style="background:#2a2a45; font-size:12px; padding:8px; margin-top:5px; box-shadow:none;">+ ADD ITEM</button>
+                        </div>
+                        <div style="text-align:center; font-size:24px;">🔄</div>
+                        <div>
+                            <div style="color:#a0a0b0; font-size:12px; font-weight:bold; margin-bottom:10px;">THEIR OFFER</div>
+                            <div id="trade-their-offer" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; min-height:80px; background:rgba(0,0,0,0.3); border-radius:10px; padding:10px;"></div>
+                            <button id="btn-add-their-item" style="background:#2a2a45; font-size:12px; padding:8px; margin-top:5px; box-shadow:none;">+ REQUEST ITEM</button>
+                        </div>
+                    </div>
+                    <div style="padding:20px; border-top:1px solid rgba(255,255,255,0.05); display:flex; gap:10px;">
+                        <button id="btn-send-trade" style="background:#00ff7a; color:#000; flex:1;">SEND PROPOSAL</button>
+                    </div>
+                </div>
+                <!-- Value Chart Sidebar -->
+                <div style="width:200px; border-left:1px solid rgba(0,255,122,0.2); display:flex; flex-direction:column; background:rgba(0,0,0,0.3);">
+                    <div style="padding:12px; font-weight:900; font-size:12px; color:#ffd700; border-bottom:1px solid rgba(255,255,255,0.05); text-align:center;">📊 VALUE CHART</div>
+                    <div id="trade-modal-value-chart" style="flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:4px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ITEM SELECTION MODAL (For Trading) -->
+        <div id="item-select-modal" class="screen hidden" style="background:rgba(0,0,0,0.85); z-index:1100; justify-content:center; align-items:center;">
+            <div style="width:90%; max-width:400px; background:#1a1a2e; border-radius:20px; padding:20px; border:1px solid #00f3ff;">
+                <h3 style="margin-bottom:15px; color:#fff;" id="item-select-title">SELECT ITEM</h3>
+                <div id="item-select-list" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; max-height:400px; overflow-y:auto; margin-bottom:20px;"></div>
+                <button id="btn-close-item-select" style="background:#333; box-shadow:none;">CANCEL</button>
+            </div>
+        </div>
+
+        <!-- CRATE OPENING ANIMATION OVERLAY -->
+        <div id="crate-anim-overlay" class="screen hidden" style="background:rgba(0,0,0,0.95); z-index:2000; justify-content:center; align-items:center;">
+            <div id="crate-opening-roll" style="display:flex; gap:10px; width:10000px; padding:20px; transition: transform 4s cubic-bezier(0.1, 0, 0.1, 1);"></div>
+            <div style="position:absolute; width:4px; height:250px; background:#fff; box-shadow:0 0 20px #fff; z-index:2001;"></div>
+        </div>
+
+        <div id="daily-screen" class="screen hidden" style="background: rgba(5,0,20,0.97);">
+            <div class="menu-header" style="border-bottom-color: rgba(170,0,255,0.3);">
+                <div><span style="color:#aa00ff; font-weight:900;">⚡ DAILY CHALLENGES</span></div>
+                <button id="btn-close-daily" style="width:auto; padding:10px 20px; font-size:16px; background:#aa00ff;">BACK</button>
+            </div>
+            <div style="padding:20px; flex:1; overflow-y:auto;">
+                <div style="text-align:center; color:#a0a0b0; font-size:13px; margin-bottom:20px;">Resets every 24 hours. Complete for exclusive bonuses!</div>
+                <div id="daily-list" style="display:flex; flex-direction:column; gap:15px;"></div>
+            </div>
+        </div>
+        
+        <!-- LOADING SCREEN -->
+        <div id="loading-screen">
+            <div id="loading-logo"></div>
+            <div class="loader-bar-container">
+                <div id="loader-bar-fill"></div>
+            </div>
+            <div style="margin-top: 15px; font-weight: 900; letter-spacing: 2px; color: #00f3ff; font-size: 14px;">INITIALIZING SIMULATION...</div>
+        </div>
+
+        <script src="game.js"></script>
+</body>
+</html>
